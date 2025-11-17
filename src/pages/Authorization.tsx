@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 
-const Settings = () => {
+const Authorization = () => {
   const navigate = useNavigate();
 
   return (
@@ -11,11 +11,11 @@ const Settings = () => {
           <Button variant="ghost" onClick={() => navigate("/bookings")}>Back</Button>
         </div>
         <div className="h-[60vh] flex items-center justify-center">
-          <h2 className="text-lg">Settings (placeholder)</h2>
+          <h2 className="text-lg">Authorization (placeholder)</h2>
         </div>
       </div>
     </main>
   );
 };
 
-export default Settings;
+export default Authorization;
