@@ -12,7 +12,8 @@ ON courses
 FOR SELECT
 TO authenticated
 USING (
-    true
+    -- only if the user row exists
+    EXISTS(SELECT 1 FROM public.users u WHERE u.uid = auth.uid())
 );
 
 -- 4. Policy for INSERT, UPDATE, DELETE (WRITE) Access
@@ -21,8 +22,8 @@ ON courses
 FOR ALL
 TO authenticated
 USING (
-    ((auth.jwt() -> 'app_metadata') ->> 'settings')::boolean
+    EXISTS(SELECT 1 FROM public.users u WHERE u.uid = auth.uid() AND u.settings = true)
 )
 WITH CHECK (
-    ((auth.jwt() -> 'app_metadata') ->> 'settings')::boolean
+    EXISTS(SELECT 1 FROM public.users u WHERE u.uid = auth.uid() AND u.settings = true)
 );
