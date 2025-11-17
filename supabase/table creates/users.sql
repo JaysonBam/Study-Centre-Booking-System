@@ -7,7 +7,6 @@ CREATE TABLE public.users (
   settings boolean DEFAULT false,
   authorisation boolean DEFAULT false,
   analytics boolean DEFAULT false,
-  enabled boolean DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 

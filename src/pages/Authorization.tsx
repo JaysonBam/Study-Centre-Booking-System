@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase, setSuppressAuthListener } from "@/lib/supabaseClient";
+import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
@@ -12,7 +12,7 @@ type UserRow = {
   authorisation: boolean | null;
   analytics: boolean | null;
   created_at?: string | null;
-  enabled: boolean | null;
+  // 'enabled' flag has been removed; deletion will remove rows instead
 };
 
 const Authorization = () => {
@@ -24,8 +24,9 @@ const Authorization = () => {
   const [adding, setAdding] = useState(false);
   const [newEmail, setNewEmail] = useState("");
   const [newName, setNewName] = useState("");
+  const FUNCTIONS_BASE = (import.meta.env.VITE_SUPABASE_FUNCTIONS_URL as string) ?? '/functions/v1';
 
-  // Load enabled users
+  // Load users (deleted accounts are removed from the users table)
   const loadUsers = async () => {
     setLoading(true);
     try {
@@ -35,8 +36,7 @@ const Authorization = () => {
       setCurrentUid(meUid);
       const { data, error } = await supabase
         .from("users")
-        .select("uid, email, name, settings, authorisation, analytics, enabled, created_at")
-        .eq("enabled", true)
+        .select("uid, email, name, settings, authorisation, analytics, created_at")
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -64,18 +64,25 @@ const Authorization = () => {
   }, []);
 
   // Toggle a boolean column for a user
-  const toggleFlag = async (uid: string, column: keyof Omit<UserRow, "uid" | "email" | "name" | "enabled">, value: boolean) => {
+  const toggleFlag = async (uid: string, column: keyof Omit<UserRow, "uid" | "email" | "name">, value: boolean) => {
     if (uid === currentUid) {
       toast.error('You may not change your own access flags here');
       return;
     }
     try {
-      const updates: any = {};
-      updates[column] = value;
-      // Request the updated row back so we can confirm the change (and surfacing errors from RLS)
-      const { data, error } = await supabase.from('users').update(updates).eq('uid', uid).select();
-      if (error) throw error;
-      if (!data || (Array.isArray(data) && data.length === 0)) throw new Error('No rows updated (permission or missing row)');
+      const token = (await supabase.auth.getSession()).data?.session?.access_token ?? null;
+      if (!token) throw new Error('Not authenticated');
+      const body: any = {};
+      body[column as string] = value;
+      const res = await fetch(`${FUNCTIONS_BASE}/admin-users/flags/${uid}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+      const text = await res.text();
+      let json: any = null;
+      try { json = text ? JSON.parse(text) : null; } catch (e) { /* not json */ }
+      if (!res.ok) throw new Error(json?.error || text || res.statusText || 'Function error');
       setUsers((prev) => prev.map(u => u.uid === uid ? { ...u, [column]: value } : u));
       toast.success('Updated');
     } catch (err: any) {
@@ -84,22 +91,30 @@ const Authorization = () => {
     }
   };
 
-  // Disable (remove access) a user: set enabled=false and clear flags
+  // Remove access to a user: perform a delete (auth + users row) via the Edge Function
   const disableUser = async (uid: string) => {
     if (uid === currentUid) {
       toast.error('You may not remove your own access');
       return;
     }
     const ok = confirm(
-      `Disable this user?\n\nThey will lose access.\n\nThey can be re-enabled later by adding their email again.`
+      `Remove this user's access?\n\nThis will delete the user from the auth system and remove their users row.`
     );
     if (!ok) return;
     try {
-      const { data, error } = await supabase.from('users').update({ enabled: false, settings: false, authorisation: false, analytics: false }).eq('uid', uid).select();
-      if (error) throw error;
-      if (!data || (Array.isArray(data) && data.length === 0)) throw new Error('No rows updated (permission or missing row)');
+      // Now perform a proper delete (remove from auth and users table)
+      const token = (await supabase.auth.getSession()).data?.session?.access_token ?? null;
+      if (!token) throw new Error('Not authenticated');
+      const res = await fetch(`${FUNCTIONS_BASE}/admin-users/delete/${uid}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const text = await res.text();
+      let json: any = null;
+      try { json = text ? JSON.parse(text) : null; } catch (e) { /* not json */ }
+      if (!res.ok) throw new Error(json?.error || text || res.statusText || 'Function error');
       setUsers((prev) => prev.filter(u => u.uid !== uid));
-      toast.success('User disabled — can be re-enabled by adding their email again');
+      toast.success('User deleted');
     } catch (err: any) {
       console.error('Failed to disable user', err?.message ?? err);
       toast.error(err?.message ?? 'Failed to remove access');
@@ -118,104 +133,32 @@ const Authorization = () => {
     setAdding(true);
     try {
       // Check if there's a users row with this email
-      const { data: existingRows, error: selectErr } = await supabase.from('users').select('uid, enabled').eq('email', email).limit(1).maybeSingle();
+  const { data: existingRows, error: selectErr } = await supabase.from('users').select('uid').eq('email', email).limit(1).maybeSingle();
       if (selectErr) throw selectErr;
 
-      // If exists and disabled -> enable it (do not create auth user)
-      if (existingRows && (existingRows as any).enabled === false) {
-        const uid = (existingRows as any).uid as string;
-        const { data: reenabled, error: updErr } = await supabase.from('users').update({ enabled: true, name }).eq('uid', uid).select();
-        if (updErr) throw updErr;
-        if (!reenabled || (Array.isArray(reenabled) && reenabled.length === 0)) throw new Error('Failed to re-enable (permission or missing row)');
-        toast.success('User re-enabled');
-        await loadUsers();
-        setNewEmail(''); setNewName('');
-        return;
+      if (existingRows) {
+        throw new Error('A users row already exists for that email');
       }
 
-  // Preserve current session so creating a new user doesn't sign us out.
-  const { data } = await supabase.auth.getSession();
-  const sessionBefore = (data as any)?.session ?? null;
-  const prevAccess = sessionBefore?.access_token ?? null;
-  const prevRefresh = sessionBefore?.refresh_token ?? null;
+      // Create user via Edge Function (admin-users/create)
+      const token = (await supabase.auth.getSession()).data?.session?.access_token ?? null;
+      if (!token) throw new Error('Not authenticated');
 
-      // Otherwise create auth user with default password (>=6 chars). If password policy fails, retry with longer password.
-      let password = 'MISC123';
-      let signData: any = null;
-      let signErr: any = null;
-      try {
-        // Temporarily suppress global auth-state validation so the signUp side-effect
-        // (which signs in the new user) doesn't trigger a sign-out or affect the admin session.
-        setSuppressAuthListener(true);
-        const res = await supabase.auth.signUp({ email, password });
-        setSuppressAuthListener(false);
-        signData = res.data ?? res;
-        signErr = res.error ?? null;
-        if (signErr) throw signErr;
-      } catch (err: any) {
-        // Ensure suppression is cleared on error as well
-        try { setSuppressAuthListener(false); } catch {}
-        const msg = err?.message ?? String(err);
-        console.warn('Sign up error, will attempt fallback or continue to create users row if possible:', msg);
-        signErr = err;
-        if (msg && msg.toLowerCase().includes('password') && password.length < 8) {
-          // retry with a stronger password
-          password = 'MISC1234';
-          try {
-            setSuppressAuthListener(true);
-            const res2 = await supabase.auth.signUp({ email, password });
-            setSuppressAuthListener(false);
-            signData = res2.data ?? res2;
-            signErr = res2.error ?? null;
-            if (signErr) console.warn('Second signUp attempt also returned error:', signErr.message ?? signErr);
-          } catch (err2: any) {
-            try { setSuppressAuthListener(false); } catch {}
-            console.warn('Second signUp attempt failed:', err2?.message ?? err2);
-            signErr = err2;
-          }
-        }
+      const res = await fetch(`${FUNCTIONS_BASE}/admin-users/create`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ email, name }),
+      });
+
+      const text = await res.text();
+      let json: any = null;
+      try { json = text ? JSON.parse(text) : null; } catch (e) { /* not json */ }
+      if (!res.ok) {
+        throw new Error(json?.error || text || res.statusText || 'Edge function failed')
       }
-
-      // If signUp created a session for the new user, restore the previous session so the admin stays logged in.
-      try {
-        if (prevAccess || prevRefresh) {
-          // setSession expects the tokens; restore the admin session if possible
-          await supabase.auth.setSession({ access_token: prevAccess, refresh_token: prevRefresh });
-        }
-      } catch (restoreErr) {
-        console.warn('Failed to restore previous session after signUp:', restoreErr);
-      }
-
-      // Get uid: if signData.user?.id exists use it, otherwise attempt to find by email in auth via users table insert returning uid from auth? We'll optimistically try to find the created auth user by calling getUser
-      let uid: string | null = (signData as any)?.user?.id ?? null;
-      if (!uid) {
-        // try to locate a users row with this email (maybe created earlier) and use its uid
-        try {
-          const { data: found, error: findErr } = await supabase.from('users').select('uid').eq('email', email).limit(1).maybeSingle();
-          if (!findErr && found) uid = (found as any).uid ?? null;
-        } catch (e) {
-          // ignore
-        }
-      }
-
-      // Insert into users table. If uid present, include it, otherwise insert without uid (if your DB requires uid, this may fail)
-      const insertRow: any = { email, name, settings: false, authorisation: false, analytics: false, enabled: true };
-      if (uid) insertRow.uid = uid;
-
-      let insData: any = null;
-      let insErr: any = null;
-      if (uid) {
-        // If we have an auth uid, use upsert on uid to avoid unique-constraint errors.
-        const res = await supabase.from('users').upsert(insertRow, { onConflict: 'uid' }).select();
-        insData = res.data ?? null;
-        insErr = res.error ?? null;
-      } else {
-        const res = await supabase.from('users').insert(insertRow).select();
-        insData = res.data ?? null;
-        insErr = res.error ?? null;
-      }
-      if (insErr) throw insErr;
-      if (!insData || (Array.isArray(insData) && insData.length === 0)) throw new Error('Insert did not return row (permission issue)');
 
       toast.success('User created and added to users table');
       setNewEmail(''); setNewName('');
@@ -272,7 +215,7 @@ const Authorization = () => {
           {loading ? (
             <div>Loading users...</div>
           ) : users.length === 0 ? (
-            <div className="text-sm text-muted-foreground">No enabled users found.</div>
+            <div className="text-sm text-muted-foreground">No users found.</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full table-auto border-collapse">

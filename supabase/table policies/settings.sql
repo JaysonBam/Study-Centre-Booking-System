@@ -14,7 +14,7 @@ ON settings
 FOR SELECT
 TO authenticated
 USING (
-    EXISTS(SELECT 1 FROM public.users u WHERE u.uid = auth.uid() AND u.enabled = true)
+    EXISTS(SELECT 1 FROM public.users u WHERE u.uid = auth.uid())
 );
 
 
@@ -24,8 +24,8 @@ ON settings
 FOR ALL
 TO authenticated
 USING (
-    EXISTS(SELECT 1 FROM public.users u WHERE u.uid = auth.uid() AND u.settings = true AND u.enabled = true)
+    EXISTS(SELECT 1 FROM public.users u WHERE u.uid = auth.uid() AND u.settings = true)
 )
 WITH CHECK (
-    EXISTS(SELECT 1 FROM public.users u WHERE u.uid = auth.uid() AND u.settings = true AND u.enabled = true)
+    EXISTS(SELECT 1 FROM public.users u WHERE u.uid = auth.uid() AND u.settings = true)
 );

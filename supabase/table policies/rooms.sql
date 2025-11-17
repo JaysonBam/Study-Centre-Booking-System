@@ -13,7 +13,7 @@ ON rooms
 FOR SELECT
 TO authenticated
 USING (
-    EXISTS(SELECT 1 FROM public.users u WHERE u.uid = auth.uid() AND u.enabled = true)
+    EXISTS(SELECT 1 FROM public.users u WHERE u.uid = auth.uid())
 );
 
 -- 4. UPDATE access for ALL authenticated users
@@ -22,10 +22,10 @@ ON rooms
 FOR UPDATE
 TO authenticated
 USING (
-    EXISTS(SELECT 1 FROM public.users u WHERE u.uid = auth.uid() AND u.enabled = true)
+    EXISTS(SELECT 1 FROM public.users u WHERE u.uid = auth.uid())
 )
 WITH CHECK (
-    EXISTS(SELECT 1 FROM public.users u WHERE u.uid = auth.uid() AND u.enabled = true)
+    EXISTS(SELECT 1 FROM public.users u WHERE u.uid = auth.uid())
 );
 
 -- 5. INSERT, UPDATE, DELETE access ONLY for users with settings = true
@@ -34,8 +34,8 @@ ON rooms
 FOR ALL
 TO authenticated
 USING (
-    EXISTS(SELECT 1 FROM public.users u WHERE u.uid = auth.uid() AND u.settings = true AND u.enabled = true)
+    EXISTS(SELECT 1 FROM public.users u WHERE u.uid = auth.uid() AND u.settings = true)
 )
 WITH CHECK (
-    EXISTS(SELECT 1 FROM public.users u WHERE u.uid = auth.uid() AND u.settings = true AND u.enabled = true)
+    EXISTS(SELECT 1 FROM public.users u WHERE u.uid = auth.uid() AND u.settings = true)
 );

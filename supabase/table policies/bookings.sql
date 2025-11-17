@@ -11,13 +11,13 @@ ON bookings
 FOR ALL
 TO authenticated
 USING (
-	-- allow only if the corresponding user row exists and is enabled
+	-- allow only if the corresponding user row exists
 	EXISTS(
-		SELECT 1 FROM public.users u WHERE u.uid = auth.uid() AND u.enabled = true
+		SELECT 1 FROM public.users u WHERE u.uid = auth.uid()
 	)
 )
 WITH CHECK (
 	EXISTS(
-		SELECT 1 FROM public.users u WHERE u.uid = auth.uid() AND u.enabled = true
+		SELECT 1 FROM public.users u WHERE u.uid = auth.uid()
 	)
 );

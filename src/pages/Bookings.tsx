@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { notifyAccessRemovedOnce } from "@/lib/supabaseClient";
 
 type AppUserRow = {
     email?: string;
@@ -11,7 +10,6 @@ type AppUserRow = {
     settings?: boolean;
     authorisation?: boolean;
     analytics?: boolean;
-    enabled?: boolean;
 };
 
 const Bookings = () => {
@@ -38,7 +36,7 @@ const Bookings = () => {
 
                 const { data: row, error: rowError } = await supabase
                     .from('users')
-                    .select('email, name, settings, authorisation, analytics, enabled')
+                    .select('email, name, settings, authorisation, analytics')
                     .eq('uid', uid)
                     .maybeSingle();
 
@@ -48,10 +46,10 @@ const Bookings = () => {
 
                 if (mounted) setUserRow(row ?? null);
 
-                // If the user row is missing or explicitly disabled, sign them out and inform them.
-                if (!row || row.enabled === false) {
+                // If the user row is missing (access removed), sign them out and inform them.
+                if (!row) {
                     await supabase.auth.signOut();
-                    notifyAccessRemovedOnce(uid ?? undefined);
+                    toast.error('Your account no longer has access. Contact an administrator.');
                     navigate('/login');
                 }
 
