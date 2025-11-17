@@ -18,6 +18,14 @@ if (!globalAny[notifierKey]) {
 }
 const NOTIFY_TTL_MS = 10_000; 
 
+// Allow temporarily suppressing the auth state change listener (used when creating users client-side)
+const SUPPRESS_KEY = '__scbs_suppress_auth_listener';
+if (!globalAny[SUPPRESS_KEY]) globalAny[SUPPRESS_KEY] = false;
+
+export function setSuppressAuthListener(v: boolean) {
+	globalAny[SUPPRESS_KEY] = !!v;
+}
+
 export function notifyAccessRemovedOnce(uid?: string) {
 	const now = Date.now();
 	const state = globalAny[notifierKey];
@@ -78,6 +86,8 @@ async function checkAccountEnabledByUid(uid: string | undefined | null) {
 // Listen to auth state changes to block accounts that have been disabled in the users table.
 supabase.auth.onAuthStateChange((event, session) => {
 	const uid = session?.user?.id ?? null;
+	// If suppression is active, skip validation (caller will restore or validate manually)
+	if (globalAny[SUPPRESS_KEY]) return;
 	// When signed in (or session restored), validate enabled flag
 	if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
 		checkAccountEnabledByUid(uid);
