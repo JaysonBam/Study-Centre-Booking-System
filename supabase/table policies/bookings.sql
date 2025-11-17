@@ -10,5 +10,14 @@ CREATE POLICY "Bookings - full access for authenticated"
 ON bookings
 FOR ALL
 TO authenticated
-USING (true)
-WITH CHECK (true);
+USING (
+	-- allow only if the corresponding user row exists and is enabled
+	EXISTS(
+		SELECT 1 FROM public.users u WHERE u.uid = auth.uid() AND u.enabled = true
+	)
+)
+WITH CHECK (
+	EXISTS(
+		SELECT 1 FROM public.users u WHERE u.uid = auth.uid() AND u.enabled = true
+	)
+);

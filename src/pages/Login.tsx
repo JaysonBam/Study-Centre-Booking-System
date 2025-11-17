@@ -29,9 +29,52 @@ const Login = () => {
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({email, password,});
-      if (error) throw error;
-      navigate("/");
+      // Attempt sign-in first. After sign-in we'll validate the users row by UID
+  const signInRes = await supabase.auth.signInWithPassword({ email, password });
+  const signInError = (signInRes as any).error as any | null;
+  if (signInError) throw signInError;
+
+  // get uid from signed-in user (support both possible shapes)
+  const signedInUser = (signInRes as any).data?.user ?? (signInRes as any).user ?? null;
+  const uid = signedInUser?.id ?? null;
+      if (!uid) {
+        // unexpected - navigate home and hope for the best
+        navigate("/");
+        return;
+      }
+
+      // Now, as an authenticated user, check the users table for enabled flag
+      try {
+        const { data: row, error: rowError } = await supabase.from('users').select('enabled').eq('uid', uid).maybeSingle();
+        if (rowError) {
+          console.error('Failed to check users row after sign-in', rowError);
+          // if we cannot check, conservatively allow the user (avoid locking out due to RLS)
+          navigate('/');
+          return;
+        }
+
+          if (!row || row.enabled === false) {
+            // Sign out and show message (single-notify)
+            await supabase.auth.signOut();
+            try {
+              // import-by-path to avoid circular import at top
+              const { notifyAccessRemovedOnce } = await import('@/lib/supabaseClient');
+              notifyAccessRemovedOnce(uid ?? undefined);
+            } catch (e) {
+              toast.error('Your account does not have access. Contact an administrator.');
+            }
+            setLoading(false);
+            return;
+          }
+
+        // All good
+        navigate('/');
+        return;
+      } catch (err) {
+        console.error('Error while validating users row after sign-in', err);
+        navigate('/');
+        return;
+      }
     } catch (error: any) {
       toast.error(error.message || "Authentication failed");
     } finally {

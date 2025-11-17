@@ -12,7 +12,8 @@ ON courses
 FOR SELECT
 TO authenticated
 USING (
-    true
+    -- only if user is enabled
+    EXISTS(SELECT 1 FROM public.users u WHERE u.uid = auth.uid() AND u.enabled = true)
 );
 
 -- 4. Policy for INSERT, UPDATE, DELETE (WRITE) Access
@@ -21,8 +22,8 @@ ON courses
 FOR ALL
 TO authenticated
 USING (
-    ((auth.jwt() -> 'app_metadata') ->> 'settings')::boolean
+    EXISTS(SELECT 1 FROM public.users u WHERE u.uid = auth.uid() AND u.settings = true AND u.enabled = true)
 )
 WITH CHECK (
-    ((auth.jwt() -> 'app_metadata') ->> 'settings')::boolean
+    EXISTS(SELECT 1 FROM public.users u WHERE u.uid = auth.uid() AND u.settings = true AND u.enabled = true)
 );

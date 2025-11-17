@@ -12,15 +12,21 @@ CREATE POLICY "Rooms - authenticated view"
 ON rooms
 FOR SELECT
 TO authenticated
-USING (true);
+USING (
+    EXISTS(SELECT 1 FROM public.users u WHERE u.uid = auth.uid() AND u.enabled = true)
+);
 
 -- 4. UPDATE access for ALL authenticated users
 CREATE POLICY "Rooms - authenticated edit"
 ON rooms
 FOR UPDATE
 TO authenticated
-USING (true)
-WITH CHECK (true);
+USING (
+    EXISTS(SELECT 1 FROM public.users u WHERE u.uid = auth.uid() AND u.enabled = true)
+)
+WITH CHECK (
+    EXISTS(SELECT 1 FROM public.users u WHERE u.uid = auth.uid() AND u.enabled = true)
+);
 
 -- 5. INSERT, UPDATE, DELETE access ONLY for users with settings = true
 CREATE POLICY "Rooms - settings full access"
@@ -28,8 +34,8 @@ ON rooms
 FOR ALL
 TO authenticated
 USING (
-    ((auth.jwt() -> 'app_metadata') ->> 'settings')::boolean = true
+    EXISTS(SELECT 1 FROM public.users u WHERE u.uid = auth.uid() AND u.settings = true AND u.enabled = true)
 )
 WITH CHECK (
-    ((auth.jwt() -> 'app_metadata') ->> 'settings')::boolean = true
+    EXISTS(SELECT 1 FROM public.users u WHERE u.uid = auth.uid() AND u.settings = true AND u.enabled = true)
 );

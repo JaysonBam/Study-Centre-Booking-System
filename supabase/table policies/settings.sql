@@ -13,7 +13,9 @@ CREATE POLICY "Allow authenticated full select"
 ON settings
 FOR SELECT
 TO authenticated
-USING (true);
+USING (
+    EXISTS(SELECT 1 FROM public.users u WHERE u.uid = auth.uid() AND u.enabled = true)
+);
 
 
 -- 4. Policy for INSERT, UPDATE, DELETE (WRITE) Access
@@ -22,8 +24,8 @@ ON settings
 FOR ALL
 TO authenticated
 USING (
-    ((auth.jwt() -> 'app_metadata') ->> 'settings')::boolean
+    EXISTS(SELECT 1 FROM public.users u WHERE u.uid = auth.uid() AND u.settings = true AND u.enabled = true)
 )
 WITH CHECK (
-    ((auth.jwt() -> 'app_metadata') ->> 'settings')::boolean
+    EXISTS(SELECT 1 FROM public.users u WHERE u.uid = auth.uid() AND u.settings = true AND u.enabled = true)
 );

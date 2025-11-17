@@ -3,40 +3,69 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { notifyAccessRemovedOnce } from "@/lib/supabaseClient";
 
-type UserMeta = { raw_app_meta_data?: Record<string, any> };
+type AppUserRow = {
+    email?: string;
+    name?: string;
+    settings?: boolean;
+    authorisation?: boolean;
+    analytics?: boolean;
+    enabled?: boolean;
+};
 
 const Bookings = () => {
     const navigate = useNavigate();
-    const [user, setUser] = useState<UserMeta | null>(null);
+    const [userRow, setUserRow] = useState<AppUserRow | null>(null);
     const [loadingUser, setLoadingUser] = useState(true);
-    const appMeta = (user as any)?.raw_app_meta_data ?? (user as any)?.app_metadata ?? {};
-    const { settings, authorization, authorisation, analytics } = appMeta as Record<string, any>;
 
-    const showSettings = !!settings;
-    const showAuthorization = !!authorization || !!authorisation;
-    const showAnalytics = !!analytics;
+    const showSettings = !!userRow?.settings;
+    const showAuthorization = !!userRow?.authorisation;
+    const showAnalytics = !!userRow?.analytics;
 
     useEffect(() => {
         let mounted = true;
-        async function loadUser() {
+        async function loadUserRow() {
             setLoadingUser(true);
             try {
-                const { data, error } = await supabase.auth.getUser();
-                if (error) throw error;
-                const u = data?.user ?? null;
-                if (mounted) setUser(u as unknown as UserMeta);
+                const { data: authData, error: authError } = await supabase.auth.getUser();
+                if (authError) throw authError;
+                const uid = authData?.user?.id ?? null;
+                if (!uid) {
+                    if (mounted) setUserRow(null);
+                    return;
+                }
+
+                const { data: row, error: rowError } = await supabase
+                    .from('users')
+                    .select('email, name, settings, authorisation, analytics, enabled')
+                    .eq('uid', uid)
+                    .maybeSingle();
+
+                if (rowError) {
+                    console.error('Failed to load users row:', rowError.message || rowError);
+                }
+
+                if (mounted) setUserRow(row ?? null);
+
+                // If the user row is missing or explicitly disabled, sign them out and inform them.
+                if (!row || row.enabled === false) {
+                    await supabase.auth.signOut();
+                    notifyAccessRemovedOnce(uid ?? undefined);
+                    navigate('/login');
+                }
+
             } catch (err: any) {
-                console.error("Failed to load user:", err?.message ?? err);
+                console.error('Failed to load user:', err?.message ?? err);
             } finally {
                 if (mounted) setLoadingUser(false);
             }
         }
 
-        loadUser();
+        loadUserRow();
 
-        return () => { mounted = false;};
-    }, []);
+        return () => { mounted = false; };
+    }, [navigate]);
 
     const handleLogout = async () => {
         const { error } = await supabase.auth.signOut();
@@ -61,7 +90,7 @@ const Bookings = () => {
                 <div className="p-4 rounded-md bg-gray-50 text-gray-900">
                                 {loadingUser ? (
                         <div>Loading user...</div>
-                    ) : user ? (
+                    ) : userRow ? (
                         <div className="space-y-2">
                             <div className="text-sm">App meta flags:</div>
                             <div className="flex gap-2 mt-2">
