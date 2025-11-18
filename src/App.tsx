@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useEffect, useState } from "react";
+import { useUserFlags } from "./hooks/useUserFlags";
 import Bookings from "./pages/Bookings";
 import Settings from "./pages/Settings";
 import Analytics from "./pages/Analytics";
@@ -39,9 +40,13 @@ const RootRedirect = () => {
   return <Navigate to={hasSession ? "/bookings" : "/login"} replace />;
 };
 
-const Protected = ({ children }: { children: JSX.Element }) => {
+
+
+// Protected route that enforces per-user flags from the users row.
+const ProtectedWithFlag = ({ children, requiredFlag }: { children: JSX.Element; requiredFlag?: "settings" | "authorisation" | "analytics" }) => {
   const [checking, setChecking] = useState(true);
   const [hasSession, setHasSession] = useState(false);
+  const { flags, loading } = useUserFlags();
 
   useEffect(() => {
     let mounted = true;
@@ -57,8 +62,12 @@ const Protected = ({ children }: { children: JSX.Element }) => {
     return () => { mounted = false };
   }, []);
 
-  if (checking) return null;
-  return hasSession ? children : <Navigate to="/login" replace />;
+  if (checking || loading) return null;
+  if (!hasSession) return <Navigate to="/login" replace />;
+  if (!requiredFlag) return children;
+
+  if (flags && flags[requiredFlag]) return children;
+  return <Navigate to="/bookings" replace />;
 };
 
 const App = () => (
@@ -69,10 +78,10 @@ const App = () => (
         <BrowserRouter>
             <Routes>
             <Route path="/" element={<RootRedirect />} />
-            <Route path="/bookings" element={<Protected><Bookings /></Protected>} />
-            <Route path="/settings" element={<Protected><Settings /></Protected>} />
-            <Route path="/analytics" element={<Protected><Analytics /></Protected>} />
-            <Route path="/authorization" element={<Protected><Authorization /></Protected>} />
+            <Route path="/bookings" element={<ProtectedWithFlag><Bookings /></ProtectedWithFlag>} />
+            <Route path="/settings" element={<ProtectedWithFlag requiredFlag="settings"><Settings /></ProtectedWithFlag>} />
+            <Route path="/analytics" element={<ProtectedWithFlag requiredFlag="analytics"><Analytics /></ProtectedWithFlag>} />
+            <Route path="/authorization" element={<ProtectedWithFlag requiredFlag="authorisation"><Authorization /></ProtectedWithFlag>} />
             <Route path="/login" element={<Login />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="*" element={<NotFound />} />

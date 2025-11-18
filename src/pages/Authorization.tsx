@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
+import Hamburger from "@/components/ui/hamburger";
 import { toast } from "sonner";
 
 type UserRow = {
@@ -16,7 +16,7 @@ type UserRow = {
 };
 
 const Authorization = () => {
-  const navigate = useNavigate();
+  
   const [users, setUsers] = useState<UserRow[]>([]);
   const [currentUid, setCurrentUid] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<UserRow | null>(null);
@@ -174,8 +174,10 @@ const Authorization = () => {
   return (
     <main className="p-6">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold">Authorization</h1>
-        <Button variant="ghost" onClick={() => navigate('/bookings')}>Back</Button>
+        <div className="flex items-center gap-3">
+          <Hamburger />
+          <h1 className="text-2xl font-semibold">Authorization</h1>
+        </div>
       </div>
 
       <section className="mb-6">

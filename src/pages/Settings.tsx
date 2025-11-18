@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabaseClient";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
+import Hamburger from "@/components/ui/hamburger";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
@@ -25,7 +25,7 @@ type CourseRow = {
 // mods removed - no longer stored here
 
 const Settings: React.FC = () => {
-  const navigate = useNavigate();
+  
   const { toast } = useToast();
 
   const [savingAll, setSavingAll] = useState(false);
@@ -281,10 +281,8 @@ const Settings: React.FC = () => {
     <main className="min-h-screen bg-background text-foreground p-6">
       <div className="max-w-6xl mx-auto">
         <div className="mb-4 flex items-center justify-between">
-          <div>
-            <Button variant="ghost" onClick={() => navigate(-1)}>
-              Back
-            </Button>
+          <div className="flex items-center gap-3">
+            <Hamburger />
           </div>
           <h1 className="text-2xl font-semibold">Settings</h1>
           <div>
