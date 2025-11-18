@@ -1,14 +1,11 @@
-import { useNavigate } from "react-router-dom";
-import { Button } from "@/components/ui/button";
+import Hamburger from "@/components/ui/hamburger";
 
 const Analytics = () => {
-  const navigate = useNavigate();
-
   return (
     <main className="min-h-screen bg-black text-white p-6">
       <div className="max-w-4xl mx-auto">
-        <div className="mb-4">
-          <Button variant="ghost" onClick={() => navigate("/bookings")}>Back</Button>
+        <div className="mb-4 flex items-center gap-3">
+          <Hamburger />
         </div>
         <div className="h-[60vh] flex items-center justify-center">
           <h2 className="text-lg">Analytics (placeholder)</h2>
