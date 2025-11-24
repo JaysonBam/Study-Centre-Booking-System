@@ -6,6 +6,7 @@ import { TimeInput } from "@/components/ui/time-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { supabase } from "@/lib/supabaseClient";
 import { format, parseISO, addMinutes } from "date-fns";
 import timeLib from "@/lib/time";
@@ -16,9 +17,10 @@ interface BookingPanelProps {
   open: boolean;
   onClose: () => void;
   prefill?: { roomId?: string; timeSlot?: string; booking?: any } | null;
+  defaultStaffName?: string;
 }
 
-export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefill = null }) => {
+export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefill = null, defaultStaffName = "" }) => {
   const { toast } = useToast();
 
   const [loading, setLoading] = useState(false);
@@ -34,7 +36,7 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
     return format(now, "HH:mm");
   });
   const [duration, setDuration] = useState<string>("30");
-  const [staffName, setStaffName] = useState<string>("");
+  const [staffName, setStaffName] = useState<string>(defaultStaffName);
   const [studentNumbers, setStudentNumbers] = useState<string>("");
 
   const [selectedCourseId, setSelectedCourseId] = useState<string>("");
@@ -42,6 +44,7 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
   const [selectedState, setSelectedState] = useState<"Active" | "Reserved" | "Ended">("Active");
 
   const [selectedBorrowed, setSelectedBorrowed] = useState<Record<string, boolean>>({});
+  const [dayBookings, setDayBookings] = useState<any[]>([]);
 
   // Load rooms and courses when panel opens
   useEffect(() => {
@@ -53,7 +56,7 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
     nowInit.setMinutes(Math.round(nowInit.getMinutes() / 30) * 30);
     setStartClock(format(nowInit, "HH:mm"));
     setDuration("30");
-    setStaffName("");
+    setStaffName(defaultStaffName);
     setStudentNumbers("");
     setSelectedCourseId("");
     setOtherCourseName("");
@@ -154,6 +157,134 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // Fetch bookings for the selected room and date to calculate availability
+  useEffect(() => {
+    if (!roomId || !startDate) return;
+    
+    const fetchBookings = async () => {
+      const { data, error } = await supabase
+        .from('bookings')
+        .select('id, start_time, end_time')
+        .eq('room_id', roomId)
+        .eq('booking_day', startDate);
+        
+      if (!error && data) {
+        setDayBookings(data);
+      }
+    };
+    
+    fetchBookings();
+  }, [roomId, startDate]);
+
+  const availableDurationOptions = React.useMemo(() => {
+    if (!startClock) return [30];
+    
+    const parseTime = (t: string) => {
+      const [h, m] = t.split(':').map(Number);
+      return h * 60 + m;
+    };
+
+    const startMins = parseTime(startClock);
+    let limitMins = 24 * 60; // End of day
+
+    // Find the earliest start time of a booking that is AFTER our start time
+    for (const b of dayBookings) {
+      // If editing, skip the current booking
+      if (prefill?.booking && b.id === prefill.booking.id) continue;
+
+      const bStart = parseTime(b.start_time);
+      const bEnd = parseTime(b.end_time);
+
+      // If a booking overlaps our start time, we technically have 0 duration available.
+      if (bStart > startMins) {
+        if (bStart < limitMins) {
+          limitMins = bStart;
+        }
+      } else if (bStart <= startMins && bEnd > startMins) {
+         // We are starting inside another booking.
+         limitMins = startMins; 
+      }
+    }
+
+    const maxDuration = limitMins - startMins;
+    const options: number[] = [];
+    
+    // Generate 30 min intervals up to maxDuration or a reasonable cap (e.g. 2 hours)
+    for (let d = 30; d <= maxDuration && d <= 120; d += 30) {
+      options.push(d);
+    }
+
+    // Ensure current duration is in the list if it's valid and > 120 (e.g. after extension)
+    const currentDur = parseInt(duration, 10);
+    if (!isNaN(currentDur) && currentDur > 120 && currentDur <= maxDuration && !options.includes(currentDur)) {
+        options.push(currentDur);
+        options.sort((a, b) => a - b);
+    }
+    
+    return options;
+  }, [startClock, dayBookings, prefill?.booking, duration]);
+
+  const availableExtensionOptions = React.useMemo(() => {
+    if (!prefill?.booking) return [];
+
+    const parseTime = (t: string) => {
+      const [h, m] = t.split(':').map(Number);
+      return h * 60 + m;
+    };
+
+    const startMins = parseTime(startClock);
+    const currentDuration = parseInt(duration, 10);
+    if (isNaN(currentDuration)) return [];
+
+    const endMins = startMins + currentDuration;
+    let limitMins = 24 * 60; // End of day
+
+    // Find the earliest start time of a booking that is AFTER our current end time
+    for (const b of dayBookings) {
+      if (b.id === prefill.booking.id) continue;
+
+      const bStart = parseTime(b.start_time);
+      
+      if (bStart >= endMins) {
+        if (bStart < limitMins) {
+          limitMins = bStart;
+        }
+      }
+    }
+
+    const maxExtension = limitMins - endMins;
+    const options: number[] = [];
+
+    // Generate 30 min intervals up to maxExtension or cap at 120 mins (2 hours extension)
+    for (let d = 30; d <= maxExtension && d <= 120; d += 30) {
+      options.push(d);
+    }
+
+    return options;
+  }, [startClock, duration, dayBookings, prefill?.booking]);
+
+  // Adjust duration if the currently selected duration is no longer available
+  useEffect(() => {
+    const currentDur = parseInt(duration);
+    if (availableDurationOptions.length > 0) {
+        // If no duration selected, or current duration is invalid/NaN, select the first option
+        if (!duration || Number.isNaN(currentDur)) {
+             setDuration(String(availableDurationOptions[0]));
+             return;
+        }
+
+        const max = availableDurationOptions[availableDurationOptions.length - 1];
+        if (currentDur > max) {
+            setDuration(String(max));
+        }
+    } else {
+        // No options available
+        if (duration !== "") {
+            setDuration("");
+        }
+    }
+  }, [availableDurationOptions, duration]);
 
   // When room selection changes, update borrowable items list
   useEffect(() => {
@@ -278,7 +409,7 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
     nowInit.setMinutes(Math.round(nowInit.getMinutes() / 30) * 30);
     setStartClock(format(nowInit, "HH:mm"));
     setDuration("30");
-    setStaffName("");
+    setStaffName(defaultStaffName);
     setStudentNumbers("");
     setSelectedCourseId("");
     setOtherCourseName("");
@@ -303,6 +434,14 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleExtend = (mins: number) => {
+    const currentDur = parseInt(duration, 10);
+    if (isNaN(currentDur)) return;
+    const newDur = currentDur + mins;
+    setDuration(String(newDur));
+    toast({ title: "Duration extended", description: `Added ${mins} minutes. Click Update to save.` });
   };
 
   return (
@@ -347,10 +486,13 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
                     <SelectValue placeholder="Select duration" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="30">30</SelectItem>
-                    <SelectItem value="60">60</SelectItem>
-                    <SelectItem value="90">90</SelectItem>
-                    <SelectItem value="120">120</SelectItem>
+                    {availableDurationOptions.length === 0 ? (
+                      <SelectItem value="none" disabled>No times available</SelectItem>
+                    ) : (
+                      availableDurationOptions.map((d) => (
+                        <SelectItem key={d} value={String(d)}>{d}</SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -400,6 +542,25 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
             <Button variant="outline" onClick={onClose}>Cancel</Button>
             {prefill?.booking ? (
               <>
+                {availableExtensionOptions.length > 0 && (
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className="mr-2">Extend</Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-40 p-2" align="end">
+                      <div className="grid gap-2">
+                        <h4 className="font-medium leading-none mb-1">Extend by</h4>
+                        <div className="grid gap-1">
+                          {availableExtensionOptions.map((mins) => (
+                            <Button key={mins} size="sm" variant="ghost" className="justify-start font-normal" onClick={() => handleExtend(mins)}>
+                              +{mins} mins
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                )}
                 <div className="flex items-center gap-2 mr-2">
                   <Label className="text-sm">State</Label>
                   <Select value={selectedState} onValueChange={(v: any) => setSelectedState(v)}>

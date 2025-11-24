@@ -1,5 +1,6 @@
-import React from "react";
+import React, { useState, useRef } from "react";
 import { parseISO } from "date-fns";
+import { Button } from "@/components/ui/button";
 
 interface BookingCellProps {
   booking?: {
@@ -24,9 +25,39 @@ interface BookingCellProps {
   timeSlot: Date;
   onCellClick: (roomId: string, timeSlotIso: string) => void;
   onBookingClick: (bookingId: string) => void;
+  onQuickAction?: (bookingId: string, action: 'activate' | 'end') => void;
 }
 
-export const BookingCell: React.FC<BookingCellProps> = ({ booking, roomId, timeSlot, onCellClick, onBookingClick }) => {
+export const BookingCell: React.FC<BookingCellProps> = ({ booking, roomId, timeSlot, onCellClick, onBookingClick, onQuickAction }) => {
+  const [showQuickAction, setShowQuickAction] = useState(false);
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleMouseEnter = () => {
+    if (!booking || booking.state === 'Ended') return;
+    hoverTimeoutRef.current = setTimeout(() => {
+      setShowQuickAction(true);
+    }, 1000);
+  };
+
+  const handleMouseLeave = () => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+    setShowQuickAction(false);
+  };
+
+  const handleQuickActionClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!booking || !onQuickAction) return;
+    if (booking.state === 'Reserved') {
+      onQuickAction(booking.id, 'activate');
+    } else if (booking.state === 'Active') {
+      onQuickAction(booking.id, 'end');
+    }
+    setShowQuickAction(false);
+  };
+
   if (!booking) {
     return (
       <td
@@ -73,11 +104,26 @@ export const BookingCell: React.FC<BookingCellProps> = ({ booking, roomId, timeS
       rowSpan={rowSpan}
       className={`relative border border-grid-border cursor-pointer p-0 ${textColorClass} ${stateClass}`}
       onClick={() => onBookingClick(booking.id)}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
       style={{ backgroundColor: bgColor }}
     >
-      <div className="h-full w-full rounded p-2">
+      <div className="h-full w-full rounded p-2 relative group">
         <div className="font-semibold text-sm">{booking.course?.name ?? booking.course_name ?? 'Course'}</div>
         <div className="text-xs opacity-90">{booking.booked_by}</div>
+        
+        {showQuickAction && onQuickAction && booking.state !== 'Ended' && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-[1px] animate-in fade-in duration-200">
+             <Button 
+               size="sm" 
+               variant={booking.state === 'Reserved' ? 'default' : 'destructive'}
+               className="h-7 text-xs shadow-lg"
+               onClick={handleQuickActionClick}
+             >
+               {booking.state === 'Reserved' ? 'Activate' : 'End'}
+             </Button>
+          </div>
+        )}
       </div>
     </td>
   );

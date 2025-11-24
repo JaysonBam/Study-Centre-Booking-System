@@ -5,10 +5,13 @@ import { useUserFlags } from "@/hooks/useUserFlags";
 import TopToolbar from "@/components/bookings/TopToolbar";
 import BookingGrid from "@/components/bookings/BookingGrid";
 import BookingPanel from "@/components/bookings/BookingPanel";
+import { useToast } from "@/hooks/use-toast";
 
 const Bookings = () => {
     useUserFlags();
+    const { toast } = useToast();
     const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+    const [currentUser, setCurrentUser] = useState<string>("");
 
     // On mount, if testing clock is enabled in settings, use that time/date as the selectedDate
     useEffect(() => {
@@ -62,12 +65,31 @@ const Bookings = () => {
         })();
     };
 
+    const handleQuickAction = async (bookingId: string, action: 'activate' | 'end') => {
+        try {
+            const newState = action === 'activate' ? 'Active' : 'Ended';
+            const { error } = await supabase
+                .from('bookings')
+                .update({ state: newState })
+                .eq('id', bookingId);
+
+            if (error) throw error;
+            
+            toast({ title: "Success", description: `Booking ${newState.toLowerCase()}` });
+        } catch (err: any) {
+            console.error("Quick action failed", err);
+            toast({ title: "Error", description: "Failed to update booking" });
+        }
+    };
+
     return (
         <div className="min-h-screen bg-background">
             <TopToolbar
                 selectedDate={selectedDate}
                 onDateChange={setSelectedDate}
                 onBookClick={handleBookClick}
+                currentUser={currentUser}
+                onUserChange={setCurrentUser}
             />
 
             <div className="p-4">
@@ -75,6 +97,7 @@ const Bookings = () => {
                     selectedDate={selectedDate}
                     onCellClick={handleCellClick}
                     onBookingClick={handleBookingClick}
+                    onQuickAction={handleQuickAction}
                 />
             </div>
 
@@ -82,6 +105,7 @@ const Bookings = () => {
                 open={panelOpen}
                 onClose={() => { setPanelOpen(false); setPanelData(null); }}
                 prefill={panelData}
+                defaultStaffName={currentUser}
             />
         </div>
     );

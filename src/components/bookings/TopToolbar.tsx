@@ -4,15 +4,18 @@ import Hamburger from "@/components/ui/hamburger";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
+import { Input } from "@/components/ui/input";
 
 interface TopToolbarProps {
   selectedDate: Date;
   onDateChange: (d: Date) => void;
   onBookClick: () => void;
   onSearchClick?: () => void;
+  currentUser?: string;
+  onUserChange?: (name: string) => void;
 }
 
-export const TopToolbar: React.FC<TopToolbarProps> = ({ selectedDate, onDateChange, onBookClick, onSearchClick }) => {
+export const TopToolbar: React.FC<TopToolbarProps> = ({ selectedDate, onDateChange, onBookClick, onSearchClick, currentUser, onUserChange }) => {
   const handleToday = () => onDateChange(new Date());
 
   return (
@@ -38,6 +41,17 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({ selectedDate, onDateChan
 
           <Button onClick={onBookClick} variant="default" size="sm">BOOK</Button>
           <Button onClick={onSearchClick} variant="outline" size="sm">SEARCH</Button>
+        </div>
+
+        <div className="flex items-center gap-2">
+            {onUserChange && (
+                <Input 
+                    className="h-8 w-[150px] or sm:w-[200px]" 
+                    placeholder="Employee Name" 
+                    value={currentUser || ""} 
+                    onChange={(e) => onUserChange(e.target.value)} 
+                />
+            )}
         </div>
       </div>
     </div>

@@ -33,6 +33,7 @@ interface BookingGridProps {
   openingHours?: { start: string; end: string };
   onCellClick: (roomId: string, timeSlotIso: string) => void;
   onBookingClick: (bookingId: string) => void;
+  onQuickAction?: (bookingId: string, action: 'activate' | 'end') => void;
 }
 
 const defaultRooms: Room[] = [
@@ -48,12 +49,18 @@ export const BookingGrid: React.FC<BookingGridProps> = ({
   openingHours: openingHoursProp,
   onCellClick,
   onBookingClick,
+  onQuickAction,
 }) => {
   const [rooms, setRooms] = useState<Room[]>(roomsProp ?? defaultRooms);
   const [openingHours, setOpeningHours] = useState<{ start: string; end: string }>(openingHoursProp ?? { start: "06:00", end: "21:00" });
   const [loading, setLoading] = useState(true);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const channelRefRef = useRef<any>(null);
+  const bookingsRef = useRef<Booking[]>([]);
+
+  useEffect(() => {
+    bookingsRef.current = bookings;
+  }, [bookings]);
 
   useEffect(() => {
     // Load rooms and opening hours from the DB. If props are provided, prefer them
@@ -165,12 +172,22 @@ export const BookingGrid: React.FC<BookingGridProps> = ({
           try { channelRefRef.current?.unsubscribe(); } catch (_) { /* ignore */ }
         }
 
-        // Setup realtime subscription for bookings on this date with server-side filter
-        const channel = supabase.channel(`public:bookings:day=${dateStr}`);
-        channel.on('postgres_changes', { event: '*', schema: 'public', table: 'bookings', filter: `booking_day=eq.${dateStr}` }, (payload: any) => {
-          console.debug('[BookingGrid] realtime payload', payload?.event, payload?.record ?? payload);
-          // refetch bookings for the day whenever any change (insert/update/delete) happens
-          fetchBookings(dateStr);
+        // Setup realtime subscription for bookings (listen to all changes and filter client-side)
+        // We remove the server-side filter because DELETE events often don't include the booking_day column,
+        // so we can't filter by it on the server.
+        const channel = supabase.channel(`public:bookings:global`);
+        channel.on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, (payload: any) => {
+          // Check if the change affects the current view:
+          // 1. New/Updated booking is on this day
+          // 2. Old booking (Deleted/Updated) was on this day (check against current bookings list)
+          const isRelevant = 
+            (payload.new && payload.new.booking_day === dateStr) || 
+            (payload.old && bookingsRef.current.some(b => b.id == payload.old.id));
+
+          if (isRelevant) {
+            console.debug('[BookingGrid] realtime update relevant, refetching', payload);
+            fetchBookings(dateStr);
+          }
         });
 
         // Subscribe and wait for subscription to be established
@@ -260,6 +277,7 @@ export const BookingGrid: React.FC<BookingGridProps> = ({
                     timeSlot={slot}
                     onCellClick={onCellClick}
                     onBookingClick={onBookingClick}
+                    onQuickAction={onQuickAction}
                   />
                 );
               })}
