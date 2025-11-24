@@ -466,7 +466,7 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl border-none">
         {loading ? (
           <div className="flex items-center justify-center h-64">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />

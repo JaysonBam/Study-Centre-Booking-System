@@ -103,7 +103,7 @@ export const BookingCell: React.FC<BookingCellProps> = ({ booking, roomId, timeS
 
   const textColorClass = getTextColorClass(bgColor);
 
-  const stateClass = booking.state === 'Ended' ? 'brightness-75' : booking.state === 'Reserved' ? 'opacity-60' : '';
+  const stateClass = booking.state === 'Ended' ? 'brightness-50 saturate-50' : booking.state === 'Reserved' ? 'opacity-40' : '';
 
   const getStatusDotColor = (state?: string) => {
     switch (state) {
