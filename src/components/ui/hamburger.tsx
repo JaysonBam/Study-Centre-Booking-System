@@ -39,18 +39,18 @@ export const Hamburger: React.FC = () => {
       {open && (
         <div className="origin-top-right absolute left-0 mt-2 w-44 rounded-md shadow-lg bg-white ring-1 ring-black/5 z-50">
           <div className="py-1">
-            <button className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100" onClick={() => handleNavigate("/bookings")}>Bookings</button>
+            <Button variant="ghost" className="w-full justify-start rounded-none h-auto px-4 py-2 font-normal" onClick={() => handleNavigate("/bookings")}>Bookings</Button>
             {!loading && showSettings && (
-              <button className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100" onClick={() => handleNavigate("/settings")}>Settings</button>
+              <Button variant="ghost" className="w-full justify-start rounded-none h-auto px-4 py-2 font-normal" onClick={() => handleNavigate("/settings")}>Settings</Button>
             )}
             {!loading && showAuthorization && (
-              <button className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100" onClick={() => handleNavigate("/authorization")}>Authorization</button>
+              <Button variant="ghost" className="w-full justify-start rounded-none h-auto px-4 py-2 font-normal" onClick={() => handleNavigate("/authorization")}>Authorization</Button>
             )}
             {!loading && showAnalytics && (
-              <button className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100" onClick={() => handleNavigate("/analytics")}>Analytics</button>
+              <Button variant="ghost" className="w-full justify-start rounded-none h-auto px-4 py-2 font-normal" onClick={() => handleNavigate("/analytics")}>Analytics</Button>
             )}
             <div className="border-t my-1" />
-            <button className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100" onClick={handleSignOut}>Logout</button>
+            <Button variant="ghost" className="w-full justify-start rounded-none h-auto px-4 py-2 font-normal text-red-600 hover:text-red-600 hover:bg-red-50" onClick={handleSignOut}>Logout</Button>
           </div>
         </div>
       )}

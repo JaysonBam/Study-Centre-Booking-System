@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import Hamburger from "@/components/ui/hamburger";
-import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 
@@ -312,13 +311,14 @@ const Settings: React.FC = () => {
           </div>
           <h1 className="text-2xl font-semibold">Settings</h1>
           <div>
-            <button
-              className={cn(buttonVariants({ variant: "default", size: "sm" }), "px-2 py-1 bg-blue-600 text-white")}
+            <Button
+              variant="default"
+              size="sm"
               onClick={saveAllRooms}
               disabled={savingAll}
             >
               {savingAll ? "Saving..." : "Save all"}
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -420,9 +420,9 @@ const Settings: React.FC = () => {
                     </label>
                   </div>
                   <div className="col-span-3 flex gap-2 justify-end">
-                    <button className={cn(buttonVariants({ variant: "destructive", size: "sm" }), "px-2 py-1 bg-red-600 text-white") } onClick={() => deleteRoom(r.id)}>
+                    <Button variant="destructive" size="sm" onClick={() => deleteRoom(r.id)}>
                       Delete
-                    </button>
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -464,9 +464,9 @@ const Settings: React.FC = () => {
                     />
                   </div>
                   <div className="col-span-6 flex gap-1 justify-end">
-                    <button className={cn(buttonVariants({ variant: "destructive", size: "sm" }), "px-2 py-1 bg-red-600 text-white")} onClick={() => deleteCourse(c.id)}>
+                    <Button variant="destructive" size="sm" onClick={() => deleteCourse(c.id)}>
                       Delete
-                    </button>
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -496,9 +496,9 @@ function CourseCreator({ onCreate }: { onCreate: (name: string, color?: string) 
         <input className="h-7 w-10 border rounded-sm" type="color" value={color || "#000000"} onChange={(e) => setColor(e.target.value)} />
       </div>
       <div className="col-span-6 flex justify-end">
-        <button className={cn(buttonVariants({ variant: "default", size: "sm" }), "px-2 py-1 bg-blue-600 text-white")} onClick={() => { if (name.trim()) { onCreate(name.trim(), color.trim() || undefined); setName(""); setColor(""); } }}>
+        <Button variant="default" size="sm" onClick={() => { if (name.trim()) { onCreate(name.trim(), color.trim() || undefined); setName(""); setColor(""); } }}>
           Add
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -533,7 +533,7 @@ function NewRoomForm({ onCreate }: { onCreate: (payload: { name: string; capacit
         </label>
       </div>
       <div className="col-span-3 flex gap-2 justify-end">
-        <button className={cn(buttonVariants({ variant: "default", size: "sm" }), "px-2 py-1 bg-blue-600 text-white") } onClick={async () => {
+        <Button variant="default" size="sm" onClick={async () => {
           if (!name.trim()) return;
           await onCreate({
             name: name.trim(),
@@ -549,7 +549,7 @@ function NewRoomForm({ onCreate }: { onCreate: (payload: { name: string; capacit
           setDynamicLabels("");
           setIsAvailable(true);
           setIsOpen(true);
-        }}>Add</button>
+        }}>Add</Button>
       </div>
     </div>
   );

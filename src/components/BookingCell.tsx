@@ -3,6 +3,7 @@ import { useState, useRef } from "react";
 import { useNow } from "@/context/NowContext";
 import { cn, getTextColorForBackground, roundToNearest30, roundUpToNearest30 } from "@/lib/utils";
 import { supabase } from "@/lib/supabaseClient";
+import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 
@@ -170,28 +171,26 @@ export const BookingCell = ({
             style={{ backgroundColor: booking.disciplines.color_hex, border: `1px solid ${booking.disciplines.color_hex}` }}
           >
             {booking.status === "reserved" && (
-              <button
+              <Button
+                variant="warning"
+                size="sm"
                 onClick={(e) => { e.stopPropagation(); handleStartQuick(); }}
                 disabled={actionLoading}
-                className={cn(
-                  "px-3 py-1.5 rounded font-semibold text-sm shadow-md",
-                  "bg-amber-500 hover:bg-amber-600 text-white",
-                )}
+                className="h-auto py-1.5 shadow-md"
               >
                 {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Start"}
-              </button>
+              </Button>
             )}
             {(booking.status === "active" || booking.status === "overdue") && (
-              <button
+              <Button
+                variant="destructive"
+                size="sm"
                 onClick={(e) => { e.stopPropagation(); handleEndQuick(); }}
                 disabled={actionLoading}
-                className={cn(
-                  "px-3 py-1.5 rounded font-semibold text-sm shadow-md",
-                  "bg-red-600 hover:bg-red-700 text-white",
-                )}
+                className="h-auto py-1.5 shadow-md"
               >
                 {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "End"}
-              </button>
+              </Button>
             )}
           </div>
         </div>
