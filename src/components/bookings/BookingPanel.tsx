@@ -12,6 +12,7 @@ import { format, parseISO, addMinutes } from "date-fns";
 import timeLib from "@/lib/time";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
+import { useConfirm } from "@/context/ConfirmDialogContext";
 
 interface BookingPanelProps {
   open: boolean;
@@ -22,6 +23,7 @@ interface BookingPanelProps {
 
 export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefill = null, defaultStaffName = "" }) => {
   const { toast } = useToast();
+  const { confirm } = useConfirm();
 
   const [loading, setLoading] = useState(false);
   const [rooms, setRooms] = useState<any[]>([]);
@@ -368,6 +370,28 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
       return;
     }
 
+    const borrowed = Object.keys(selectedBorrowed).filter((k) => selectedBorrowed[k]);
+
+    if (state === "Ended" && borrowed.length > 0) {
+      const lowercasedItems = borrowed.map((item) => item.toLowerCase());
+      const itemsList = lowercasedItems.join(', ');
+      const lastIndex = itemsList.lastIndexOf(', ');
+      const formattedList = lastIndex !== -1 
+          ? itemsList.substring(0, lastIndex) + ' and ' + itemsList.substring(lastIndex + 2)
+          : itemsList;
+      
+      const verb = lowercasedItems.length === 1 ? 'Is' : 'Are';
+      const returned = await confirm({
+        title: "Confirm Return",
+        description: `${verb} ${formattedList} returned?`,
+        confirmText: "Yes",
+        cancelText: "No",
+      });
+      if (!returned) {
+        return;
+      }
+    }
+
     setLoading(true);
     try {
       const start = parseISO(`${startDate}T${startClock}`);
@@ -375,8 +399,6 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
       const booking_day = startDate;
       const start_time = format(start, "HH:mm:ss");
       const end_time = format(end, "HH:mm:ss");
-
-      const borrowed = Object.keys(selectedBorrowed).filter((k) => selectedBorrowed[k]);
 
       const payload: any = {
         room_id: parseInt(roomId, 10),
@@ -440,7 +462,12 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
 
   const handleDelete = async () => {
     if (!prefill?.booking?.id) return;
-    const ok = window.confirm("Delete this booking? This action cannot be undone.");
+    const ok = await confirm({
+      title: "Delete Booking",
+      description: "Delete this booking? This action cannot be undone.",
+      confirmText: "Delete",
+      variant: "destructive",
+    });
     if (!ok) return;
     setLoading(true);
     try {
@@ -466,14 +493,19 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl border-none">
+      <DialogContent className="max-w-2xl border-none p-0 overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center h-64">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
           </div>
         ) : (
-        <div className="space-y-3">
-          <div className="max-h-[72vh] overflow-auto px-3 py-3">
+        <div className="flex flex-col h-full">
+          <div className="px-6 py-4 border-b flex items-center justify-between bg-muted/5">
+             <h2 className="text-lg font-semibold">
+                {prefill?.booking ? "Edit Booking" : "New Booking"}
+             </h2>
+          </div>
+          <div className="max-h-[70vh] overflow-y-auto px-6 py-4">
             <div className="space-y-2">
               <Label htmlFor="room">Room</Label>
               <Select value={roomId} onValueChange={setRoomId}>
@@ -529,19 +561,6 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
             </div>
 
             <div className="space-y-2 mt-3">
-              <Label>Borrowed items</Label>
-              <div className="grid grid-cols-2 gap-2">
-                {borrowableItems.length === 0 && <div className="text-sm text-muted-foreground">No borrowable items for this room</div>}
-                {borrowableItems.map((it) => (
-                  <label key={it} className="inline-flex items-center gap-2">
-                    <input type="checkbox" checked={!!selectedBorrowed[it]} onChange={() => toggleBorrowed(it)} />
-                    <span className="text-sm">{it}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-2 mt-3">
               <Label htmlFor="course">Course</Label>
               <Select value={selectedCourseId} onValueChange={setSelectedCourseId}>
                 <SelectTrigger id="course"><SelectValue placeholder="Select course" /></SelectTrigger>
@@ -561,10 +580,22 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
               <Label htmlFor="studentNumbers">Student Numbers</Label>
               <Textarea id="studentNumbers" value={studentNumbers} onChange={(e) => setStudentNumbers(e.target.value)} rows={4} />
             </div>
+
+            <div className="space-y-2 mt-3">
+              <Label>Borrowed items</Label>
+              <div className="grid grid-cols-2 gap-2">
+                {borrowableItems.length === 0 && <div className="text-sm text-muted-foreground">No borrowable items for this room</div>}
+                {borrowableItems.map((it) => (
+                  <label key={it} className="inline-flex items-center gap-2">
+                    <input type="checkbox" checked={!!selectedBorrowed[it]} onChange={() => toggleBorrowed(it)} />
+                    <span className="text-sm">{it}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
           </div>
 
-          <div className="px-3 py-2 bg-muted/5 flex flex-wrap gap-2 items-center justify-end">
-            <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <div className="px-6 py-4 bg-muted/5 flex flex-wrap gap-2 items-center justify-end border-t">
             {prefill?.booking ? (
               <>
                 {availableExtensionOptions.length > 0 && (

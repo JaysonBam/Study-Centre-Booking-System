@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
 import Hamburger from "@/components/ui/hamburger";
 import { toast } from "sonner";
+import { useConfirm } from "@/context/ConfirmDialogContext";
 
 type UserRow = {
   uid: string;
@@ -16,6 +17,7 @@ type UserRow = {
 };
 
 const Authorization = () => {
+  const { confirm } = useConfirm();
   
   const [users, setUsers] = useState<UserRow[]>([]);
   const [currentUid, setCurrentUid] = useState<string | null>(null);
@@ -97,9 +99,12 @@ const Authorization = () => {
       toast.error('You may not remove your own access');
       return;
     }
-    const ok = confirm(
-      `Remove this user's access?\n\nThis will delete the user from the auth system and remove their users row.`
-    );
+    const ok = await confirm({
+      title: "Remove Access",
+      description: "Remove this user's access? This will delete the user from the auth system and remove their users row.",
+      confirmText: "Remove",
+      variant: "destructive",
+    });
     if (!ok) return;
     try {
       // Now perform a proper delete (remove from auth and users table)

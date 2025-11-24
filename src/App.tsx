@@ -13,6 +13,7 @@ import Login from "./pages/Login";
 import ResetPassword from "./pages/ResetPassword";
 import NotFound from "./pages/NotFound";
 import { supabase } from "./lib/supabaseClient";
+import { ConfirmDialogProvider } from "./context/ConfirmDialogContext";
 
 const queryClient = new QueryClient();
 
@@ -73,6 +74,7 @@ const ProtectedWithFlag = ({ children, requiredFlag }: { children: JSX.Element; 
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
+      <ConfirmDialogProvider>
         <Toaster />
         <Sonner />
         <BrowserRouter>
@@ -87,6 +89,7 @@ const App = () => (
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
+      </ConfirmDialogProvider>
     </TooltipProvider>
   </QueryClientProvider>
 );

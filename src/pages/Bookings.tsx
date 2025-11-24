@@ -6,10 +6,12 @@ import TopToolbar from "@/components/bookings/TopToolbar";
 import BookingGrid from "@/components/bookings/BookingGrid";
 import BookingPanel from "@/components/bookings/BookingPanel";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/context/ConfirmDialogContext";
 
 const Bookings = () => {
     useUserFlags();
     const { toast } = useToast();
+    const { confirm } = useConfirm();
     const [selectedDate, setSelectedDate] = useState<Date>(new Date());
     const [currentUser, setCurrentUser] = useState<string>("");
 
@@ -68,6 +70,35 @@ const Bookings = () => {
     const handleQuickAction = async (bookingId: string, action: 'activate' | 'end') => {
         try {
             const newState = action === 'activate' ? 'Active' : 'Ended';
+
+            if (action === 'end') {
+                const { data: booking, error: fetchError } = await supabase
+                    .from('bookings')
+                    .select('borrowed_items')
+                    .eq('id', bookingId)
+                    .single();
+
+                if (fetchError) throw fetchError;
+
+                if (booking?.borrowed_items && booking.borrowed_items.length > 0) {
+                    const lowercasedItems = booking.borrowed_items.map((item: string) => item.toLowerCase());
+                    const itemsList = lowercasedItems.join(', ');
+                    const lastIndex = itemsList.lastIndexOf(', ');
+                    const formattedList = lastIndex !== -1 
+                        ? itemsList.substring(0, lastIndex) + ' and ' + itemsList.substring(lastIndex + 2)
+                        : itemsList;
+                    
+                    const verb = lowercasedItems.length === 1 ? 'Is' : 'Are';
+                    const returned = await confirm({
+                        title: "Confirm Return",
+                        description: `${verb} ${formattedList} returned?`,
+                        confirmText: "Yes",
+                        cancelText: "No",
+                    });
+                    if (!returned) return;
+                }
+            }
+
             const { error } = await supabase
                 .from('bookings')
                 .update({ state: newState })
