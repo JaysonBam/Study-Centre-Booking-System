@@ -8,11 +8,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { supabase } from "@/lib/supabaseClient";
-import { format, parseISO, addMinutes } from "date-fns";
+import { format, parseISO, addMinutes, eachDayOfInterval, isBefore } from "date-fns";
 import timeLib from "@/lib/time";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
 import { useConfirm } from "@/context/ConfirmDialogContext";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
 
 interface BookingPanelProps {
   open: boolean;
@@ -31,7 +34,7 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
   const [borrowableItems, setBorrowableItems] = useState<string[]>([]);
 
   const [roomId, setRoomId] = useState<string>(prefill?.roomId ?? "");
-  const [startDate, setStartDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [startDate, setStartDate] = useState<string>(() => format(new Date(), "yyyy-MM-dd"));
   const [startClock, setStartClock] = useState<string>(() => {
     const now = new Date();
     now.setMinutes(Math.round(now.getMinutes() / 30) * 30);
@@ -47,6 +50,13 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
 
   const [selectedBorrowed, setSelectedBorrowed] = useState<Record<string, boolean>>({});
   const [dayBookings, setDayBookings] = useState<any[]>([]);
+  const [errors, setErrors] = useState<Record<string, boolean>>({});
+
+  // Bulk booking state
+  const [isBulkBooking, setIsBulkBooking] = useState(false);
+  const [bulkDates, setBulkDates] = useState<{ start: string; end: string }[]>([{ start: "", end: "" }]);
+  const [bulkTimes, setBulkTimes] = useState<{ start: string; end: string }[]>([{ start: "", end: "" }]);
+  const [bulkRoomIds, setBulkRoomIds] = useState<string[]>([]);
 
   // Load rooms and courses when panel opens
   useEffect(() => {
@@ -70,6 +80,13 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
         setSelectedBorrowed({});
         setBorrowableItems([]);
         setSelectedState("Active");
+        setErrors({});
+        
+        // Reset bulk booking state
+        setIsBulkBooking(false);
+        setBulkDates([{ start: "", end: "" }]);
+        setBulkTimes([{ start: "", end: "" }]);
+        setBulkRoomIds([]);
 
         // If no prefill time provided, populate defaults from testing clock / now
         if (!prefill?.timeSlot && !prefill?.booking) {
@@ -345,10 +362,24 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
   };
 
   const handleSave = async (state: "Active" | "Reserved" | "Ended") => {
-    // Basic required fields
-    if (!roomId || !startDate || !startClock || !duration || !staffName?.trim()) {
-      toast({ title: "Missing fields", description: "Please fill required fields (room, date/time, duration, staff name)" });
+    if (isBulkBooking) {
+      await handleBulkSave(state);
       return;
+    }
+
+    const newErrors: Record<string, boolean> = {};
+    if (!roomId) newErrors.roomId = true;
+    if (!startDate) newErrors.startDate = true;
+    if (!startClock) newErrors.startClock = true;
+    if (!duration) newErrors.duration = true;
+    if (!staffName?.trim()) newErrors.staffName = true;
+    if (!selectedCourseId) newErrors.selectedCourseId = true;
+    if (selectedCourseId === "other" && !otherCourseName?.trim()) newErrors.otherCourseName = true;
+
+    if (Object.keys(newErrors).length > 0) {
+        setErrors(newErrors);
+        toast({ title: "Missing fields", description: "Please fill in all required fields.", variant: "destructive" });
+        return;
     }
 
     // Validate 30-minute increments for start time and duration
@@ -365,10 +396,7 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
     }
 
     // If user selected Other course, ensure they entered a name
-    if (selectedCourseId === "other" && !otherCourseName?.trim()) {
-      toast({ title: "Course required", description: "Please enter a course name for 'Other'" });
-      return;
-    }
+    // (Already checked above in newErrors logic)
 
     const borrowed = Object.keys(selectedBorrowed).filter((k) => selectedBorrowed[k]);
 
@@ -444,9 +472,138 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
     }
   };
 
+  const addBulkDate = () => setBulkDates([...bulkDates, { start: "", end: "" }]);
+  const removeBulkDate = (i: number) => setBulkDates(bulkDates.filter((_, idx) => idx !== i));
+  const updateBulkDate = (i: number, field: "start" | "end", val: string) => {
+    const newDates = [...bulkDates];
+    newDates[i][field] = val;
+    setBulkDates(newDates);
+  };
+
+  const addBulkTime = () => setBulkTimes([...bulkTimes, { start: "", end: "" }]);
+  const removeBulkTime = (i: number) => setBulkTimes(bulkTimes.filter((_, idx) => idx !== i));
+  const updateBulkTime = (i: number, field: "start" | "end", val: string) => {
+    const newTimes = [...bulkTimes];
+    newTimes[i][field] = val;
+    setBulkTimes(newTimes);
+  };
+
+  const toggleBulkRoom = (rId: string) => {
+    setBulkRoomIds(prev => prev.includes(rId) ? prev.filter(id => id !== rId) : [...prev, rId]);
+  };
+
+  const handleBulkSave = async (state: "Active" | "Reserved" | "Ended") => {
+    const newErrors: Record<string, boolean> = {};
+    
+    // Validation
+    if (bulkRoomIds.length === 0) {
+        newErrors.bulkRooms = true;
+    }
+    
+    // Filter out empty ranges
+    const validDates = bulkDates.filter(d => d.start && d.end);
+    const validTimes = bulkTimes.filter(t => t.start && t.end);
+
+    if (validDates.length === 0) {
+        newErrors.bulkDates = true;
+    }
+    if (validTimes.length === 0) {
+        newErrors.bulkTimes = true;
+    }
+
+    // Course validation
+    if (!selectedCourseId) {
+        newErrors.selectedCourseId = true;
+    }
+    if (selectedCourseId === "other" && !otherCourseName?.trim()) {
+        newErrors.otherCourseName = true;
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+        setErrors(newErrors);
+        toast({ title: "Missing fields", description: "Please fill in all required fields.", variant: "destructive" });
+        return;
+    }
+
+    setLoading(true);
+    try {
+        const bookingsToInsert: any[] = [];
+
+        for (const dateRange of validDates) {
+            const startD = parseISO(dateRange.start);
+            const endD = parseISO(dateRange.end);
+            
+            if (isBefore(endD, startD)) {
+                 toast({ title: "Invalid date range", description: `End date ${dateRange.end} is before start date ${dateRange.start}` });
+                 setLoading(false);
+                 return;
+            }
+
+            const days = eachDayOfInterval({ start: startD, end: endD });
+
+            for (const day of days) {
+                const dayStr = format(day, "yyyy-MM-dd");
+                
+                for (const timeRange of validTimes) {
+                    const tStart = timeRange.start;
+                    const tEnd = timeRange.end;
+                    
+                    if (!tStart || !tEnd || tStart >= tEnd) {
+                         continue; 
+                    }
+
+                    for (const rId of bulkRoomIds) {
+                        const payload: any = {
+                            room_id: parseInt(rId, 10),
+                            start_time: tStart + ":00",
+                            end_time: tEnd + ":00",
+                            booking_day: dayStr,
+                            student_numbers: null,
+                            borrowed_items: [],
+                            booked_by: null,
+                            state: state,
+                        };
+
+                        if (selectedCourseId && selectedCourseId !== "other") {
+                            payload.course_id = parseInt(selectedCourseId, 10);
+                            payload.course_name = null;
+                        } else if (selectedCourseId === "other") {
+                            payload.course_id = null;
+                            payload.course_name = otherCourseName || null;
+                        } else {
+                            payload.course_id = null;
+                            payload.course_name = null;
+                        }
+                        
+                        bookingsToInsert.push(payload);
+                    }
+                }
+            }
+        }
+
+        if (bookingsToInsert.length === 0) {
+             toast({ title: "No bookings generated", description: "Check your ranges." });
+             return;
+        }
+
+        const { error } = await supabase.from("bookings").insert(bookingsToInsert);
+        if (error) throw error;
+        
+        toast({ title: "Saved", description: `${bookingsToInsert.length} bookings created` });
+        resetFormToDefaults();
+        onClose();
+
+    } catch (err: any) {
+        console.error(err);
+        toast({ title: "Save failed", description: mapDatabaseError(err) });
+    } finally {
+        setLoading(false);
+    }
+  };
+
   const resetFormToDefaults = () => {
     setRoomId("");
-    setStartDate(() => new Date().toISOString().slice(0, 10));
+    setStartDate(() => format(new Date(), "yyyy-MM-dd"));
     const nowInit = new Date();
     nowInit.setMinutes(Math.round(nowInit.getMinutes() / 30) * 30);
     setStartClock(format(nowInit, "HH:mm"));
@@ -458,6 +615,11 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
     setSelectedBorrowed({});
     setBorrowableItems([]);
     setSelectedState("Active");
+    setIsBulkBooking(false);
+    setBulkDates([{ start: "", end: "" }]);
+    setBulkTimes([{ start: "", end: "" }]);
+    setBulkRoomIds([]);
+    setErrors({});
   };
 
   const handleDelete = async () => {
@@ -504,12 +666,78 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
              <h2 className="text-lg font-semibold">
                 {prefill?.booking ? "Edit Booking" : "New Booking"}
              </h2>
+             {!prefill?.booking && (
+               <div className="flex items-center gap-2 mr-8">
+                 <Label htmlFor="bulk-mode" className="text-sm cursor-pointer">Bulk Mode</Label>
+                 <Switch id="bulk-mode" checked={isBulkBooking} onCheckedChange={setIsBulkBooking} />
+               </div>
+             )}
           </div>
           <div className="max-h-[70vh] overflow-y-auto px-6 py-4">
+            {isBulkBooking ? (
+              <div className="space-y-6">
+                {/* Date Ranges */}
+                <div>
+                    <div className={cn("text-sm font-medium mb-2", errors.bulkDates && "text-destructive")}>Date Ranges</div>
+                    {bulkDates.map((d, i) => (
+                        <div key={i} className="flex items-center gap-2 mb-2">
+                            <Input type="date" value={d.start} onChange={e => updateBulkDate(i, 'start', e.target.value)} className={cn(errors.bulkDates && !d.start && "border-destructive")} />
+                            <span>to</span>
+                            <Input type="date" value={d.end} onChange={e => updateBulkDate(i, 'end', e.target.value)} className={cn(errors.bulkDates && !d.end && "border-destructive")} />
+                            <Button variant="ghost" size="icon" onClick={() => removeBulkDate(i)} disabled={bulkDates.length === 1}>✕</Button>
+                        </div>
+                    ))}
+                    <Button variant="outline" size="sm" onClick={addBulkDate}>Add Date Range</Button>
+                </div>
+
+                {/* Time Ranges */}
+                <div>
+                    <div className={cn("text-sm font-medium mb-2", errors.bulkTimes && "text-destructive")}>Time Ranges</div>
+                    {bulkTimes.map((t, i) => (
+                        <div key={i} className="flex items-center gap-2 mb-2">
+                            <TimeInput value={t.start} onChange={(val: any) => updateBulkTime(i, 'start', String(val))} className={cn(errors.bulkTimes && !t.start && "border-destructive")} />
+                            <span>to</span>
+                            <TimeInput value={t.end} onChange={(val: any) => updateBulkTime(i, 'end', String(val))} className={cn(errors.bulkTimes && !t.end && "border-destructive")} />
+                            <Button variant="ghost" size="icon" onClick={() => removeBulkTime(i)} disabled={bulkTimes.length === 1}>✕</Button>
+                        </div>
+                    ))}
+                    <Button variant="outline" size="sm" onClick={addBulkTime}>Add Time Range</Button>
+                </div>
+
+                {/* Rooms */}
+                <div>
+                    <div className={cn("text-sm font-medium mb-2", errors.bulkRooms && "text-destructive")}>Rooms</div>
+                    <div className={cn("border rounded p-2 max-h-40 overflow-y-auto grid grid-cols-2 gap-2", errors.bulkRooms && "border-destructive")}>
+                        {rooms.map(r => (
+                            <div key={r.id} className="flex items-center gap-2">
+                                <Checkbox id={`room-${r.id}`} checked={bulkRoomIds.includes(String(r.id))} onCheckedChange={() => toggleBulkRoom(String(r.id))} />
+                                <Label htmlFor={`room-${r.id}`} className="cursor-pointer">{r.name}</Label>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Course */}
+                <div className="space-y-2">
+                  <Select value={selectedCourseId} onValueChange={setSelectedCourseId}>
+                    <SelectTrigger id="course-bulk" className={cn(errors.selectedCourseId && "border-destructive")}><SelectValue placeholder="Select course" /></SelectTrigger>
+                    <SelectContent>
+                      {courses.map((c) => (
+                        <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                      ))}
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {selectedCourseId === "other" && (
+                    <Input placeholder="Course name" value={otherCourseName} onChange={(e) => setOtherCourseName(e.target.value)} className={cn(errors.otherCourseName && "border-destructive")} />
+                  )}
+                </div>
+              </div>
+            ) : (
+            <>
             <div className="space-y-2">
-              <Label htmlFor="room">Room</Label>
               <Select value={roomId} onValueChange={setRoomId}>
-                <SelectTrigger id="room">
+                <SelectTrigger id="room" className={cn(errors.roomId && "border-destructive")}>
                   <SelectValue placeholder="Select room" />
                 </SelectTrigger>
                 <SelectContent>
@@ -526,20 +754,17 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
               <div className="space-y-2">
-                <Label htmlFor="startDate">Date</Label>
-                <Input id="startDate" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+                <Input id="startDate" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className={cn(errors.startDate && "border-destructive")} />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="startClock">Time</Label>
-                <TimeInput id="startClock" value={startClock} onChange={(val: any) => setStartClock(String(val))} />
+                <TimeInput id="startClock" value={startClock} onChange={(val: any) => setStartClock(String(val))} className={cn(errors.startClock && "border-destructive")} />
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
               <div className="space-y-2">
-                <Label htmlFor="duration">Duration (mins)</Label>
                 <Select value={duration} onValueChange={setDuration}>
-                  <SelectTrigger id="duration">
+                  <SelectTrigger id="duration" className={cn(errors.duration && "border-destructive")}>
                     <SelectValue placeholder="Select duration" />
                   </SelectTrigger>
                   <SelectContent>
@@ -547,7 +772,7 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
                       <SelectItem value="none" disabled>No times available</SelectItem>
                     ) : (
                       availableDurationOptions.map((d) => (
-                        <SelectItem key={d} value={String(d)}>{d}</SelectItem>
+                        <SelectItem key={d} value={String(d)}>{d} mins</SelectItem>
                       ))
                     )}
                   </SelectContent>
@@ -555,15 +780,13 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="staffName">Staff Name</Label>
-                <Input id="staffName" value={staffName} onChange={(e) => setStaffName(e.target.value)} placeholder="Your name" />
+                <Input id="staffName" value={staffName} onChange={(e) => setStaffName(e.target.value)} placeholder="Staff Name" className={cn(errors.staffName && "border-destructive")} />
               </div>
             </div>
 
             <div className="space-y-2 mt-3">
-              <Label htmlFor="course">Course</Label>
               <Select value={selectedCourseId} onValueChange={setSelectedCourseId}>
-                <SelectTrigger id="course"><SelectValue placeholder="Select course" /></SelectTrigger>
+                <SelectTrigger id="course" className={cn(errors.selectedCourseId && "border-destructive")}><SelectValue placeholder="Select course" /></SelectTrigger>
                 <SelectContent>
                   {courses.map((c) => (
                     <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
@@ -572,17 +795,16 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
                 </SelectContent>
               </Select>
               {selectedCourseId === "other" && (
-                <Input placeholder="Course name" value={otherCourseName} onChange={(e) => setOtherCourseName(e.target.value)} />
+                <Input placeholder="Course name" value={otherCourseName} onChange={(e) => setOtherCourseName(e.target.value)} className={cn(errors.otherCourseName && "border-destructive")} />
               )}
             </div>
 
             <div className="space-y-2 mt-3">
-              <Label htmlFor="studentNumbers">Student Numbers</Label>
-              <Textarea id="studentNumbers" value={studentNumbers} onChange={(e) => setStudentNumbers(e.target.value)} rows={4} />
+              <Textarea id="studentNumbers" value={studentNumbers} onChange={(e) => setStudentNumbers(e.target.value)} rows={4} placeholder="Student Numbers" />
             </div>
 
             <div className="space-y-2 mt-3">
-              <Label>Borrowed items</Label>
+              <div className="text-sm font-medium mb-2">Borrowed items</div>
               <div className="grid grid-cols-2 gap-2">
                 {borrowableItems.length === 0 && <div className="text-sm text-muted-foreground">No borrowable items for this room</div>}
                 {borrowableItems.map((it) => (
@@ -593,6 +815,8 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
                 ))}
               </div>
             </div>
+            </>
+            )}
           </div>
 
           <div className="px-6 py-4 bg-muted/5 flex flex-wrap gap-2 items-center justify-end border-t">
@@ -618,7 +842,6 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
                   </Popover>
                 )}
                 <div className="flex items-center gap-2 mr-2">
-                  <Label className="text-sm">State</Label>
                   <Select value={selectedState} onValueChange={(v: any) => setSelectedState(v)}>
                     <SelectTrigger className="min-w-[120px]">
                       <SelectValue />

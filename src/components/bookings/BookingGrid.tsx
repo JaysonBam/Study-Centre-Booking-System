@@ -171,7 +171,7 @@ export const BookingGrid: React.FC<BookingGridProps> = ({
       const init = async () => {
         await load();
         // Fetch bookings for the current selected date
-        const dateStr = selectedDate.toISOString().slice(0,10);
+        const dateStr = format(selectedDate, "yyyy-MM-dd");
         await fetchBookings(dateStr);
 
         // If there's an existing channel for a previous date, remove it first
