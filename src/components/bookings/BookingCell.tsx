@@ -26,13 +26,16 @@ interface BookingCellProps {
   onCellClick: (roomId: string, timeSlotIso: string) => void;
   onBookingClick: (bookingId: string) => void;
   onQuickAction?: (bookingId: string, action: 'activate' | 'end') => void;
+  onHover?: (isHovering: boolean) => void;
+  isCurrentRow?: boolean;
 }
 
-export const BookingCell: React.FC<BookingCellProps> = ({ booking, roomId, timeSlot, onCellClick, onBookingClick, onQuickAction }) => {
+export const BookingCell: React.FC<BookingCellProps> = ({ booking, roomId, timeSlot, onCellClick, onBookingClick, onQuickAction, onHover, isCurrentRow }) => {
   const [showQuickAction, setShowQuickAction] = useState(false);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleMouseEnter = () => {
+    onHover?.(true);
     if (!booking || booking.state === 'Ended') return;
     hoverTimeoutRef.current = setTimeout(() => {
       setShowQuickAction(true);
@@ -40,6 +43,7 @@ export const BookingCell: React.FC<BookingCellProps> = ({ booking, roomId, timeS
   };
 
   const handleMouseLeave = () => {
+    onHover?.(false);
     if (hoverTimeoutRef.current) {
       clearTimeout(hoverTimeoutRef.current);
       hoverTimeoutRef.current = null;
@@ -61,8 +65,10 @@ export const BookingCell: React.FC<BookingCellProps> = ({ booking, roomId, timeS
   if (!booking) {
     return (
       <td
-        className="border border-grid-border p-1 cursor-pointer hover:bg-grid-cell-hover bg-grid-cell"
+        className={`border border-grid-border p-1 cursor-pointer hover:bg-primary/20 ${isCurrentRow ? 'bg-accent/10' : 'bg-grid-cell'}`}
         onClick={() => onCellClick(roomId, timeSlot.toISOString())}
+        onMouseEnter={() => onHover?.(true)}
+        onMouseLeave={() => onHover?.(false)}
         role="button"
         tabIndex={0}
       />
@@ -102,7 +108,7 @@ export const BookingCell: React.FC<BookingCellProps> = ({ booking, roomId, timeS
   return (
     <td
       rowSpan={rowSpan}
-      className={`relative border border-grid-border cursor-pointer p-0 ${textColorClass} ${stateClass}`}
+      className={`relative border border-grid-border cursor-pointer p-0 ${textColorClass} ${stateClass} hover:brightness-90 transition-all`}
       onClick={() => onBookingClick(booking.id)}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}

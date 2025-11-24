@@ -19,7 +19,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({ selectedDate, onDateChan
   const handleToday = () => onDateChange(new Date());
 
   return (
-    <div className="sticky top-0 z-40 bg-card/95 border-b border-border shadow-sm">
+    <div className="sticky top-0 z-[60] bg-card/95 border-b border-border shadow-sm">
       <div className="max-w-full mx-auto flex items-center justify-between px-3 py-2">
         <div className="flex items-center gap-2">
           <Hamburger />

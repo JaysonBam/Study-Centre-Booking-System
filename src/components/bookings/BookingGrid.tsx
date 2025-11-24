@@ -2,6 +2,7 @@ import React, { useMemo, useEffect, useState, useRef } from "react";
 import { format } from "date-fns";
 import { Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
+import timeLib from "@/lib/time";
 import { addMinutes } from "date-fns";
 import BookingCell from "./BookingCell";
 
@@ -57,10 +58,22 @@ export const BookingGrid: React.FC<BookingGridProps> = ({
   const [bookings, setBookings] = useState<Booking[]>([]);
   const channelRefRef = useRef<any>(null);
   const bookingsRef = useRef<Booking[]>([]);
+  const [hoveredCell, setHoveredCell] = useState<{ roomId: string | null; timeSlotIso: string | null }>({ roomId: null, timeSlotIso: null });
+  const [currentTime, setCurrentTime] = useState<Date | null>(null);
 
   useEffect(() => {
     bookingsRef.current = bookings;
   }, [bookings]);
+
+  useEffect(() => {
+    const updateTime = async () => {
+      const t = await timeLib.getTime();
+      setCurrentTime(t);
+    };
+    updateTime();
+    const interval = setInterval(updateTime, 60000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     // Load rooms and opening hours from the DB. If props are provided, prefer them
@@ -255,18 +268,22 @@ export const BookingGrid: React.FC<BookingGridProps> = ({
   return (
     <div className="overflow-auto h-[calc(100vh-80px)] border border-grid-border rounded-lg text-black">
       <table className="w-full border-collapse">
-        <thead className="sticky top-0 z-10 bg-grid-header">
+        <thead className="bg-grid-header">
           <tr>
-            <th className="border-b border-grid-border p-1 text-left font-semibold min-w-[48px] md:min-w-[64px] sticky left-0 bg-grid-header text-sm">Time</th>
+            <th className="border-b border-grid-border p-1 text-left font-semibold min-w-[48px] md:min-w-[64px] sticky top-0 left-0 z-50 bg-grid-header text-sm">Time</th>
             {rooms.map((r) => (
-              <th key={r.id} className="border-b border-grid-border text-left font-semibold p-1 min-w-[56px] md:min-w-[80px] sticky top-0 bg-grid-header text-sm">{r.name}</th>
+              <th key={r.id} className={`border-b border-grid-border text-left font-semibold p-1 min-w-[56px] md:min-w-[80px] sticky top-0 z-40 text-sm transition-colors ${hoveredCell.roomId === r.id ? 'bg-grid-cell-hover text-primary' : 'bg-grid-header'}`}>{r.name}</th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {timeSlots.map((slot) => (
-            <tr key={slot.toISOString()} className="hover:bg-grid-cell-hover">
-              <td className="border-0 border-r border-grid-border p-1 text-sm font-medium sticky left-0 bg-grid-header">{format(slot, "HH:mm")}</td>
+          {timeSlots.map((slot) => {
+            const isCurrentRow = currentTime ? slot <= currentTime && currentTime < addMinutes(slot, 30) : false;
+            return (
+            <tr key={slot.toISOString()} className={`hover:bg-grid-cell-hover ${isCurrentRow ? 'bg-accent/5' : ''}`}>
+              <td className={`border-0 border-r border-grid-border p-1 text-sm font-medium sticky left-0 z-30 transition-colors ${hoveredCell.timeSlotIso === slot.toISOString() ? 'bg-grid-cell-hover text-primary' : isCurrentRow ? 'bg-grid-cell-hover text-accent font-bold' : 'bg-grid-header'}`}>
+                {format(slot, "HH:mm")}
+              </td>
               {rooms.map((room) => {
                 const booking = getBookingForCell(room.id, slot);
                 return (
@@ -278,11 +295,13 @@ export const BookingGrid: React.FC<BookingGridProps> = ({
                     onCellClick={onCellClick}
                     onBookingClick={onBookingClick}
                     onQuickAction={onQuickAction}
+                    onHover={(isHovering) => setHoveredCell(isHovering ? { roomId: room.id, timeSlotIso: slot.toISOString() } : { roomId: null, timeSlotIso: null })}
+                    isCurrentRow={isCurrentRow}
                   />
                 );
               })}
             </tr>
-          ))}
+          )})}
         </tbody>
       </table>
     </div>
