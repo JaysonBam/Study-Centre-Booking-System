@@ -105,17 +105,30 @@ export const BookingCell: React.FC<BookingCellProps> = ({ booking, roomId, timeS
 
   const stateClass = booking.state === 'Ended' ? 'brightness-75' : booking.state === 'Reserved' ? 'opacity-60' : '';
 
+  const getStatusDotColor = (state?: string) => {
+    switch (state) {
+      case 'Active': return 'bg-green-500';
+      case 'Reserved': return 'bg-yellow-500';
+      case 'Ended': return 'bg-gray-400';
+      default: return 'bg-gray-400';
+    }
+  };
+
   return (
     <td
       rowSpan={rowSpan}
-      className={`relative border border-grid-border cursor-pointer p-0 ${textColorClass} ${stateClass} hover:brightness-90 transition-all`}
+      className={`relative border border-grid-border cursor-pointer p-0 ${textColorClass} group transition-all`}
       onClick={() => onBookingClick(booking.id)}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
-      style={{ backgroundColor: bgColor }}
     >
-      <div className="h-full w-full rounded p-2 relative group">
-        <div className="font-semibold text-sm">{booking.course?.name ?? booking.course_name ?? 'Course'}</div>
+      <div 
+        className={`absolute inset-0 ${stateClass} group-hover:brightness-90 transition-all`} 
+        style={{ backgroundColor: bgColor }} 
+      />
+      <div className="h-full w-full rounded p-2 relative">
+        <div className={`absolute top-1 right-1 w-2 h-2 rounded-full ${getStatusDotColor(booking.state)} shadow-sm ring-1 ring-white/20`} />
+        <div className="font-semibold text-sm mb-1">{booking.course?.name ?? booking.course_name ?? 'Course'}</div>
         <div className="text-xs opacity-90">{booking.booked_by}</div>
         
         {showQuickAction && onQuickAction && booking.state !== 'Ended' && (
