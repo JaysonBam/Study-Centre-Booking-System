@@ -49,37 +49,37 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
   // Load rooms and courses when panel opens
   useEffect(() => {
     if (!open) return;
-    // Reset form to defaults whenever panel opens to avoid stale values from previous edits
-    setRoomId(prefill?.roomId ?? "");
-    setStartDate(() => new Date().toISOString().slice(0, 10));
-    const nowInit = new Date();
-    nowInit.setMinutes(Math.round(nowInit.getMinutes() / 30) * 30);
-    setStartClock(format(nowInit, "HH:mm"));
-    setDuration("30");
-    setStaffName(defaultStaffName);
-    setStudentNumbers("");
-    setSelectedCourseId("");
-    setOtherCourseName("");
-    setSelectedBorrowed({});
-    setBorrowableItems([]);
-    setSelectedState("Active");
-
-    // If no prefill time provided, populate defaults from testing clock / now
-    (async () => {
-      if (!prefill?.timeSlot && !prefill?.booking) {
-        try {
-          const t = await timeLib.getTime();
-          setStartDate(format(t, "yyyy-MM-dd"));
-          setStartClock(format(t, "HH:mm"));
-        } catch (e) {
-          // ignore
-        }
-      }
-    })();
-
+    
     const load = async () => {
       setLoading(true);
+      setDayBookings([]); // Clear stale bookings to prevent incorrect duration clamping
       try {
+        // Reset form to defaults whenever panel opens to avoid stale values from previous edits
+        setRoomId(prefill?.roomId ?? "");
+        setStartDate(() => new Date().toISOString().slice(0, 10));
+        const nowInit = new Date();
+        nowInit.setMinutes(Math.round(nowInit.getMinutes() / 30) * 30);
+        setStartClock(format(nowInit, "HH:mm"));
+        setDuration("30");
+        setStaffName(defaultStaffName);
+        setStudentNumbers("");
+        setSelectedCourseId("");
+        setOtherCourseName("");
+        setSelectedBorrowed({});
+        setBorrowableItems([]);
+        setSelectedState("Active");
+
+        // If no prefill time provided, populate defaults from testing clock / now
+        if (!prefill?.timeSlot && !prefill?.booking) {
+          try {
+            const t = await timeLib.getTime();
+            setStartDate(format(t, "yyyy-MM-dd"));
+            setStartClock(format(t, "HH:mm"));
+          } catch (e) {
+            // ignore
+          }
+        }
+
         const [{ data: roomsData }, { data: coursesData }] = await Promise.all([
           supabase.from("rooms").select("id,name,borrowable_items,is_available").order("name"),
           supabase.from("courses").select("id,name").order("name"),
@@ -145,6 +145,26 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
           setSelectedBorrowed(sel);
           // set state when editing
           setSelectedState((b.state as any) ?? "Active");
+
+          // Fetch bookings for this room/day immediately to ensure duration calculation is correct
+          const { data: bookingsData } = await supabase
+            .from('bookings')
+            .select('id, start_time, end_time')
+            .eq('room_id', b.room_id)
+            .eq('booking_day', b.booking_day);
+          if (bookingsData) {
+            setDayBookings(bookingsData);
+          }
+        } else if (prefill?.roomId) {
+            // Also fetch for new bookings if room is pre-selected
+            const { data: bookingsData } = await supabase
+            .from('bookings')
+            .select('id, start_time, end_time')
+            .eq('room_id', prefill.roomId)
+            .eq('booking_day', startDate); // startDate is already set to default or prefill
+             if (bookingsData) {
+                setDayBookings(bookingsData);
+            }
         }
       } catch (err) {
         console.error("Error loading panel data", err);
@@ -191,7 +211,7 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
     // Find the earliest start time of a booking that is AFTER our start time
     for (const b of dayBookings) {
       // If editing, skip the current booking
-      if (prefill?.booking && b.id === prefill.booking.id) continue;
+      if (prefill?.booking && String(b.id) === String(prefill.booking.id)) continue;
 
       const bStart = parseTime(b.start_time);
       const bEnd = parseTime(b.end_time);
@@ -215,9 +235,9 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
       options.push(d);
     }
 
-    // Ensure current duration is in the list if it's valid and > 120 (e.g. after extension)
+    // Ensure current duration is in the list if it's valid
     const currentDur = parseInt(duration, 10);
-    if (!isNaN(currentDur) && currentDur > 120 && currentDur <= maxDuration && !options.includes(currentDur)) {
+    if (!isNaN(currentDur) && currentDur > 0 && currentDur <= maxDuration && !options.includes(currentDur)) {
         options.push(currentDur);
         options.sort((a, b) => a - b);
     }
@@ -242,7 +262,7 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
 
     // Find the earliest start time of a booking that is AFTER our current end time
     for (const b of dayBookings) {
-      if (b.id === prefill.booking.id) continue;
+      if (String(b.id) === String(prefill.booking.id)) continue;
 
       const bStart = parseTime(b.start_time);
       
@@ -447,6 +467,11 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl">
+        {loading ? (
+          <div className="flex items-center justify-center h-64">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        ) : (
         <div className="space-y-3">
           <div className="max-h-[72vh] overflow-auto px-3 py-3">
             <div className="space-y-2">
@@ -587,6 +612,7 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
             )}
           </div>
         </div>
+        )}
       </DialogContent>
     </Dialog>
   );
