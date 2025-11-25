@@ -22,7 +22,6 @@ export function useUserFlags() {
     let mounted = true;
 
     async function load() {
-      setLoading(true);
       try {
         const { data: authData } = await supabase.auth.getUser();
         const uid = authData?.user?.id ?? null;
@@ -44,15 +43,9 @@ export function useUserFlags() {
         }
 
         if (!row) {
-          // user no longer has a users row -> sign them out and redirect to login
-          try {
-            await supabase.auth.signOut();
-          } catch (e) {
-            console.warn("Failed to sign out missing user", e);
-          }
-          toast.error("Your account no longer has access. Contact an administrator.");
-          // hard redirect to avoid rendering protected UI
-          window.location.href = "/login";
+          console.warn("useUserFlags: User authenticated but no users row found.");
+          // Avoid aggressive sign-out/redirect to prevent refresh loops on transient errors
+          if (mounted) setUser(null);
           return;
         }
 

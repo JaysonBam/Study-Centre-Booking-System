@@ -11,6 +11,7 @@ interface Room {
   name: string;
   capacity?: number | null;
   is_available?: boolean | null;
+  dynamic_labels?: string[] | null;
 }
 
 interface Booking {
@@ -80,7 +81,7 @@ export const BookingGrid: React.FC<BookingGridProps> = ({
               // Use `is_available` to determine whether to show the room. If undefined/null, treat as available.
               return r.is_available === false ? false : true;
             })
-            .map((r) => ({ id: String(r.id), name: r.name, capacity: r.capacity, is_available: r.is_available }));
+            .map((r) => ({ id: String(r.id), name: r.name, capacity: r.capacity, is_available: r.is_available, dynamic_labels: r.dynamic_labels }));
           // Sort rooms by name (numeric Room N first if applicable)
           const roomRegex = /^Room\s*(\d+)$/i;
           const numericRooms = fetched
@@ -262,7 +263,14 @@ export const BookingGrid: React.FC<BookingGridProps> = ({
           <tr>
             <th className="border-b border-grid-border p-1 text-left font-semibold min-w-[48px] md:min-w-[64px] sticky top-0 left-0 z-50 bg-grid-header text-sm">Time</th>
             {rooms.map((r) => (
-              <th key={r.id} className={`border-b border-grid-border text-left font-semibold p-1 min-w-[56px] md:min-w-[80px] sticky top-0 z-40 text-sm transition-colors ${hoveredCell.roomId === r.id ? 'bg-grid-cell-hover text-primary' : 'bg-grid-header'}`}>{r.name}</th>
+              <th key={r.id} className={`border-b border-grid-border text-left font-semibold p-1 min-w-[56px] md:min-w-[80px] sticky top-0 z-40 text-sm transition-colors ${hoveredCell.roomId === r.id ? 'bg-grid-cell-hover text-primary' : 'bg-grid-header'}`}>
+                <div>{r.name}</div>
+                {r.dynamic_labels && r.dynamic_labels.length > 0 && (
+                  <div className="text-xs font-normal mt-0.5">
+                    {r.dynamic_labels.map(l => l.split(' ').pop()).join(' ')}
+                  </div>
+                )}
+              </th>
             ))}
           </tr>
         </thead>

@@ -103,7 +103,7 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
         }
 
         const [{ data: roomsData }, { data: coursesData }] = await Promise.all([
-          supabase.from("rooms").select("id,name,borrowable_items,is_available").order("name"),
+          supabase.from("rooms").select("id,name,borrowable_items,is_available,dynamic_labels").order("name"),
           supabase.from("courses").select("id,name").order("name"),
         ]);
         const rlist = (roomsData || []).filter((r: any) => r.is_available !== false).map((r: any) => ({ ...r, id: String(r.id) }));
@@ -831,10 +831,15 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
                         return true;
                     })
                     .map(({ r, status }) => (
-                      <SelectItem key={r.id} value={String(r.id)}>
+                      <SelectItem key={r.id} value={String(r.id)} className="[&>span:last-of-type]:flex [&>span:last-of-type]:w-full">
                         <div className="flex items-center justify-between w-full gap-4">
-                          <span className={status?.color}>{r.name}</span>
-                          {status?.text && <span className={`text-xs ${status.color} whitespace-nowrap`}>{status.text}</span>}
+                          <div className="flex items-center gap-2">
+                            <span className={status?.color}>{r.name}</span>
+                            {status?.text && <span className={`text-xs ${status.color} whitespace-nowrap`}>{status.text}</span>}
+                          </div>
+                          {r.dynamic_labels && r.dynamic_labels.length > 0 && (
+                            <span className="text-xs">{r.dynamic_labels.map((l: string) => l.split(' ').pop()).join(' ')}</span>
+                          )}
                         </div>
                       </SelectItem>
                     ))}

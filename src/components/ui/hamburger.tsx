@@ -40,6 +40,7 @@ export const Hamburger: React.FC = () => {
         <div className="origin-top-right absolute left-0 mt-2 w-44 rounded-md shadow-lg bg-white ring-1 ring-black/5 z-[100]">
           <div className="py-1">
             <Button variant="ghost" className="w-full justify-start rounded-none h-auto px-4 py-2 font-normal" onClick={() => handleNavigate("/bookings")}>Bookings</Button>
+            <Button variant="ghost" className="w-full justify-start rounded-none h-auto px-4 py-2 font-normal" onClick={() => handleNavigate("/room-maintenance")}>Room Maintenance</Button>
             {!loading && showSettings && (
               <Button variant="ghost" className="w-full justify-start rounded-none h-auto px-4 py-2 font-normal" onClick={() => handleNavigate("/settings")}>Settings</Button>
             )}
