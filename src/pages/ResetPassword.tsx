@@ -99,7 +99,7 @@ const ResetPassword = () => {
               <Input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
             </div>
             <div className="flex items-center gap-2">
-              <Button type="submit" disabled={loading || !hasSession} className="bg-black text-white hover:bg-gray-800">
+              <Button type="submit" disabled={loading || !hasSession}>
                 {loading ? "Saving..." : "Set new password"}
               </Button>
               <Button variant="ghost" onClick={handleCancel}>Cancel</Button>

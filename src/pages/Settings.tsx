@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import Hamburger from "@/components/ui/hamburger";
-import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 
@@ -45,6 +44,11 @@ const Settings: React.FC = () => {
   // operation hours stored under settings key 'operation_hours'
   const [opStart, setOpStart] = useState("08:00");
   const [opEnd, setOpEnd] = useState("17:00");
+
+  // testing clock stored under settings key 'testing_clock'
+  const [testingEnabled, setTestingEnabled] = useState(false);
+  const [testingDate, setTestingDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [testingTime, setTestingTime] = useState(() => new Date().toTimeString().slice(0, 5));
 
   // no dialog editor; edits are inline and persisted via the master "Save all" button
 
@@ -104,7 +108,21 @@ const Settings: React.FC = () => {
       if (v.end) setOpEnd(v.end);
     }
 
-    // no additional settings currently
+    // testing clock
+    const { data: testData, error: testErr } = await supabase
+      .from("settings")
+      .select("value")
+      .eq("key", "testing_clock")
+      .single();
+    if (testErr && testErr.code !== "PGRST116") {
+      console.warn(testErr);
+    }
+    if (testData?.value) {
+      const v = testData.value as any;
+      if (typeof v.enabled === "boolean") setTestingEnabled(!!v.enabled);
+      if (v.date) setTestingDate(v.date);
+      if (v.time) setTestingTime(v.time);
+    }
   }
 
   // operation hours will be saved as part of the master Save All flow
@@ -268,6 +286,13 @@ const Settings: React.FC = () => {
         toast({ title: "All settings saved" });
       }
 
+      // save testing clock
+      const testingPayload = { enabled: testingEnabled, date: testingDate, time: testingTime };
+      const { error: testingErr } = await supabase.from("settings").upsert({ key: "testing_clock", value: testingPayload });
+      if (testingErr) {
+        toast({ title: "Settings saved but failed to save testing clock", description: testingErr.message });
+      }
+
       // refresh local state from backend and clear deleted trackers
       await Promise.all([fetchRooms(), fetchCourses()]);
       setDeletedRoomIds([]);
@@ -286,13 +311,14 @@ const Settings: React.FC = () => {
           </div>
           <h1 className="text-2xl font-semibold">Settings</h1>
           <div>
-            <button
-              className={cn(buttonVariants({ variant: "default", size: "sm" }), "px-2 py-1 bg-blue-600 text-white")}
+            <Button
+              variant="default"
+              size="sm"
               onClick={saveAllRooms}
               disabled={savingAll}
             >
               {savingAll ? "Saving..." : "Save all"}
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -310,6 +336,26 @@ const Settings: React.FC = () => {
             <div>
             </div>
           </div>
+        </section>
+
+        <section className="mb-8 bg-card p-4 rounded-md">
+          <h2 className="text-lg font-medium mb-2">Clock mode</h2>
+          <div className="flex gap-3 items-center">
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={testingEnabled} onChange={(e) => setTestingEnabled(e.target.checked)} />
+              <span className="text-sm">Use testing time</span>
+            </label>
+
+            <div className="w-40">
+              <label className="block text-sm mb-1">Date</label>
+              <Input type="date" value={testingDate} onChange={(e) => setTestingDate(e.target.value)} disabled={!testingEnabled} />
+            </div>
+            <div className="w-40">
+              <label className="block text-sm mb-1">Time</label>
+              <Input type="time" value={testingTime} onChange={(e) => setTestingTime(e.target.value)} disabled={!testingEnabled} />
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground mt-2">When testing time is enabled the app will return this date/time instead of the system clock (useful for testing scheduling features).</p>
         </section>
 
         <section className="mb-8 bg-card p-2 rounded-md">
@@ -374,9 +420,9 @@ const Settings: React.FC = () => {
                     </label>
                   </div>
                   <div className="col-span-3 flex gap-2 justify-end">
-                    <button className={cn(buttonVariants({ variant: "destructive", size: "sm" }), "px-2 py-1 bg-red-600 text-white") } onClick={() => deleteRoom(r.id)}>
+                    <Button variant="destructive" size="sm" onClick={() => deleteRoom(r.id)}>
                       Delete
-                    </button>
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -418,9 +464,9 @@ const Settings: React.FC = () => {
                     />
                   </div>
                   <div className="col-span-6 flex gap-1 justify-end">
-                    <button className={cn(buttonVariants({ variant: "destructive", size: "sm" }), "px-2 py-1 bg-red-600 text-white")} onClick={() => deleteCourse(c.id)}>
+                    <Button variant="destructive" size="sm" onClick={() => deleteCourse(c.id)}>
                       Delete
-                    </button>
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -450,9 +496,9 @@ function CourseCreator({ onCreate }: { onCreate: (name: string, color?: string) 
         <input className="h-7 w-10 border rounded-sm" type="color" value={color || "#000000"} onChange={(e) => setColor(e.target.value)} />
       </div>
       <div className="col-span-6 flex justify-end">
-        <button className={cn(buttonVariants({ variant: "default", size: "sm" }), "px-2 py-1 bg-blue-600 text-white")} onClick={() => { if (name.trim()) { onCreate(name.trim(), color.trim() || undefined); setName(""); setColor(""); } }}>
+        <Button variant="default" size="sm" onClick={() => { if (name.trim()) { onCreate(name.trim(), color.trim() || undefined); setName(""); setColor(""); } }}>
           Add
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -487,7 +533,7 @@ function NewRoomForm({ onCreate }: { onCreate: (payload: { name: string; capacit
         </label>
       </div>
       <div className="col-span-3 flex gap-2 justify-end">
-        <button className={cn(buttonVariants({ variant: "default", size: "sm" }), "px-2 py-1 bg-blue-600 text-white") } onClick={async () => {
+        <Button variant="default" size="sm" onClick={async () => {
           if (!name.trim()) return;
           await onCreate({
             name: name.trim(),
@@ -503,7 +549,7 @@ function NewRoomForm({ onCreate }: { onCreate: (payload: { name: string; capacit
           setDynamicLabels("");
           setIsAvailable(true);
           setIsOpen(true);
-        }}>Add</button>
+        }}>Add</Button>
       </div>
     </div>
   );

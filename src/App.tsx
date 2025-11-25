@@ -13,6 +13,8 @@ import Login from "./pages/Login";
 import ResetPassword from "./pages/ResetPassword";
 import NotFound from "./pages/NotFound";
 import { supabase } from "./lib/supabaseClient";
+import { ConfirmDialogProvider } from "./context/ConfirmDialogContext";
+import { NowProvider } from "./context/NowContext";
 
 const queryClient = new QueryClient();
 
@@ -73,20 +75,24 @@ const ProtectedWithFlag = ({ children, requiredFlag }: { children: JSX.Element; 
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-            <Routes>
-            <Route path="/" element={<RootRedirect />} />
-            <Route path="/bookings" element={<ProtectedWithFlag><Bookings /></ProtectedWithFlag>} />
-            <Route path="/settings" element={<ProtectedWithFlag requiredFlag="settings"><Settings /></ProtectedWithFlag>} />
-            <Route path="/analytics" element={<ProtectedWithFlag requiredFlag="analytics"><Analytics /></ProtectedWithFlag>} />
-            <Route path="/authorization" element={<ProtectedWithFlag requiredFlag="authorisation"><Authorization /></ProtectedWithFlag>} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/reset-password" element={<ResetPassword />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
+      <NowProvider>
+        <ConfirmDialogProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+              <Routes>
+              <Route path="/" element={<RootRedirect />} />
+              <Route path="/bookings" element={<ProtectedWithFlag><Bookings /></ProtectedWithFlag>} />
+              <Route path="/settings" element={<ProtectedWithFlag requiredFlag="settings"><Settings /></ProtectedWithFlag>} />
+              <Route path="/analytics" element={<ProtectedWithFlag requiredFlag="analytics"><Analytics /></ProtectedWithFlag>} />
+              <Route path="/authorization" element={<ProtectedWithFlag requiredFlag="authorisation"><Authorization /></ProtectedWithFlag>} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+        </ConfirmDialogProvider>
+      </NowProvider>
     </TooltipProvider>
   </QueryClientProvider>
 );

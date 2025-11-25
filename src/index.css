@@ -140,4 +140,16 @@ All colors MUST be HSL.
   .border-border { border-color: hsl(var(--border)); }
   .bg-background { background-color: hsl(var(--background)); }
   .text-foreground { color: hsl(var(--foreground)); }
+  .bg-card { background-color: hsl(var(--card)); }
+  .text-card-foreground { color: hsl(var(--card-foreground)); }
+  .bg-popover { background-color: hsl(var(--popover)); }
+  .text-popover-foreground { color: hsl(var(--popover-foreground)); }
+  .bg-muted { background-color: hsl(var(--muted)); }
+  .text-muted-foreground { color: hsl(var(--muted-foreground)); }
+
+  /* Grid specific utilities */
+  .bg-grid-header { background-color: hsl(var(--grid-header)); }
+  .bg-grid-cell { background-color: hsl(var(--grid-cell)); }
+  .bg-grid-cell-hover { background-color: hsl(var(--grid-cell-hover)); }
+  .border-grid-border { border-color: hsl(var(--grid-border)); }
 }

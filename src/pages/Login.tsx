@@ -138,20 +138,21 @@ const Login = () => {
             </div>
             <Button
               type="submit"
-              className="w-full bg-black text-white hover:bg-gray-800 focus-visible:ring-2 focus-visible:ring-offset-2 transition-colors duration-150"
+              className="w-full"
               disabled={loading}
             >
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Sign In
             </Button>
             <div className="flex items-center justify-between mt-2">
-              <button
+              <Button
+                variant="link"
                 type="button"
-                className="text-sm text-muted-foreground hover:underline"
+                className="px-0 font-normal text-muted-foreground h-auto"
                 onClick={handleResetPassword}
               >
                 Forgot password?
-              </button>
+              </Button>
             </div>
           </form>
         </CardContent>
