@@ -1,6 +1,8 @@
 import React, { useState, useRef } from "react";
 import { parseISO } from "date-fns";
 import { Button } from "@/components/ui/button";
+import { useNow } from "@/context/NowContext";
+import { getBookingSoftState } from "@/lib/utils";
 
 interface BookingCellProps {
   booking?: {
@@ -31,6 +33,7 @@ interface BookingCellProps {
 }
 
 export const BookingCell: React.FC<BookingCellProps> = ({ booking, roomId, timeSlot, onCellClick, onBookingClick, onQuickAction, onHover, isCurrentRow }) => {
+  const { currentTime } = useNow();
   const [showQuickAction, setShowQuickAction] = useState(false);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -105,13 +108,24 @@ export const BookingCell: React.FC<BookingCellProps> = ({ booking, roomId, timeS
 
   const stateClass = booking.state === 'Ended' ? 'brightness-50 saturate-50' : booking.state === 'Reserved' ? 'opacity-40' : '';
 
+  const softState = getBookingSoftState(booking, currentTime);
+
   const getStatusDotColor = (state?: string) => {
+    if (softState === 'late') return 'bg-orange-500';
+    if (softState === 'overdue') return 'bg-red-500';
+
     switch (state) {
       case 'Active': return 'bg-green-500';
       case 'Reserved': return 'bg-yellow-500';
       case 'Ended': return 'bg-gray-400';
       default: return 'bg-gray-400';
     }
+  };
+
+  const getBorderClass = () => {
+    if (softState === 'late') return 'ring-2 ring-inset ring-orange-500';
+    if (softState === 'overdue') return 'ring-2 ring-inset ring-red-500';
+    return '';
   };
 
   return (
@@ -126,6 +140,7 @@ export const BookingCell: React.FC<BookingCellProps> = ({ booking, roomId, timeS
         className={`absolute inset-0 ${stateClass} group-hover:brightness-90 transition-all`} 
         style={{ backgroundColor: bgColor }} 
       />
+      <div className={`absolute inset-0 pointer-events-none ${getBorderClass()}`} />
       <div className="h-full w-full rounded p-2 relative">
         <div className={`absolute top-1 right-1 w-2 h-2 rounded-full ${getStatusDotColor(booking.state)} shadow-sm ring-1 ring-white/20`} />
         <div className="font-semibold text-sm mb-1">{booking.course?.name ?? booking.course_name ?? 'Course'}</div>

@@ -16,6 +16,8 @@ import { useConfirm } from "@/context/ConfirmDialogContext";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import { getBookingSoftState } from "@/lib/utils";
+import { useNow } from "@/context/NowContext";
 
 interface BookingPanelProps {
   open: boolean;
@@ -27,6 +29,7 @@ interface BookingPanelProps {
 export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefill = null, defaultStaffName = "" }) => {
   const { toast } = useToast();
   const { confirm } = useConfirm();
+  const { currentTime } = useNow();
 
   const [loading, setLoading] = useState(false);
   const [rooms, setRooms] = useState<any[]>([]);
@@ -165,22 +168,31 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
           // set state when editing
           setSelectedState((b.state as any) ?? "Active");
 
-          // Fetch bookings for this room/day immediately to ensure duration calculation is correct
+          // Fetch bookings for this day immediately to ensure duration calculation and room status is correct
           const { data: bookingsData } = await supabase
             .from('bookings')
-            .select('id, start_time, end_time')
-            .eq('room_id', b.room_id)
+            .select('id, room_id, start_time, end_time, state, booking_day')
             .eq('booking_day', b.booking_day);
           if (bookingsData) {
             setDayBookings(bookingsData);
+            
+            // Re-calculate duration after bookings are loaded to ensure it's valid
+            try {
+                const s = parseISO(`${b.booking_day}T${b.start_time}`);
+                const e = parseISO(`${b.booking_day}T${b.end_time}`);
+                const mins = Math.round((e.getTime() - s.getTime())/60000);
+                setDuration(String(mins));
+            } catch (e) {
+                // ignore
+            }
           }
-        } else if (prefill?.roomId) {
-            // Also fetch for new bookings if room is pre-selected
+        } else {
+            // Also fetch for new bookings if room is pre-selected or just default date
+            const targetDate = prefill?.timeSlot ? format(new Date(prefill.timeSlot), "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd");
             const { data: bookingsData } = await supabase
             .from('bookings')
-            .select('id, start_time, end_time')
-            .eq('room_id', prefill.roomId)
-            .eq('booking_day', startDate); // startDate is already set to default or prefill
+            .select('id, room_id, start_time, end_time, state, booking_day')
+            .eq('booking_day', targetDate);
              if (bookingsData) {
                 setDayBookings(bookingsData);
             }
@@ -197,15 +209,14 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // Fetch bookings for the selected room and date to calculate availability
+  // Fetch bookings for the selected date (all rooms) to calculate availability
   useEffect(() => {
-    if (!roomId || !startDate) return;
+    if (!startDate || !open) return;
     
     const fetchBookings = async () => {
       const { data, error } = await supabase
         .from('bookings')
-        .select('id, start_time, end_time')
-        .eq('room_id', roomId)
+        .select('id, room_id, start_time, end_time, state, booking_day')
         .eq('booking_day', startDate);
         
       if (!error && data) {
@@ -214,7 +225,7 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
     };
     
     fetchBookings();
-  }, [roomId, startDate]);
+  }, [startDate, open]);
 
   const availableDurationOptions = React.useMemo(() => {
     if (!startClock) return [30];
@@ -229,6 +240,9 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
 
     // Find the earliest start time of a booking that is AFTER our start time
     for (const b of dayBookings) {
+      // Filter by selected room
+      if (String(b.room_id) !== String(roomId)) continue;
+      
       // If editing, skip the current booking
       if (prefill?.booking && String(b.id) === String(prefill.booking.id)) continue;
 
@@ -256,9 +270,12 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
 
     // Ensure current duration is in the list if it's valid
     const currentDur = parseInt(duration, 10);
-    if (!isNaN(currentDur) && currentDur > 0 && currentDur <= maxDuration && !options.includes(currentDur)) {
-        options.push(currentDur);
-        options.sort((a, b) => a - b);
+    if (!isNaN(currentDur) && currentDur > 0 && !options.includes(currentDur)) {
+        // Only add if it fits within maxDuration OR if we are editing and it's the existing duration
+        if (currentDur <= maxDuration || (prefill?.booking && currentDur <= 120)) {
+             options.push(currentDur);
+             options.sort((a, b) => a - b);
+        }
     }
     
     return options;
@@ -281,7 +298,8 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
 
     // Find the earliest start time of a booking that is AFTER our current end time
     for (const b of dayBookings) {
-      if (String(b.id) === String(prefill.booking.id)) continue;
+      if (String(b.room_id) !== String(roomId)) continue;
+      if (prefill?.booking && String(b.id) === String(prefill.booking.id)) continue;
 
       const bStart = parseTime(b.start_time);
       
@@ -653,6 +671,66 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
     toast({ title: "Duration extended", description: `Added ${mins} minutes. Click Update to save.` });
   };
 
+  const getRoomStatus = (rId: string) => {
+    if (!startClock || !startDate) return null;
+    
+    // Check if selected date is today
+    const isToday = format(currentTime, "yyyy-MM-dd") === startDate;
+    
+    const [h, m] = startClock.split(':').map(Number);
+    const selectedTimeMins = h * 60 + m;
+
+    // 1. Check for Overdue (Any active booking ended before now) - Only if today
+    if (isToday) {
+        const overdueBooking = dayBookings.find(b => {
+            if (String(b.room_id) !== String(rId)) return false;
+            if (b.state !== 'Active') return false;
+            const endDate = new Date(`${b.booking_day}T${b.end_time}`);
+            return currentTime > endDate;
+        });
+
+        if (overdueBooking) {
+             const endDate = new Date(`${overdueBooking.booking_day}T${overdueBooking.end_time}`);
+             const diff = Math.floor((currentTime.getTime() - endDate.getTime()) / 60000);
+             return { color: 'text-red-500', text: `Overdue ${diff} min` };
+        }
+    }
+
+    // 2. Check for Overlapping booking
+    const overlappingBooking = dayBookings.find(b => {
+        if (String(b.room_id) !== String(rId)) return false;
+        // If editing, skip the current booking
+        if (prefill?.booking && String(b.id) === String(prefill.booking.id)) return false;
+
+        const [sh, sm] = b.start_time.split(':').map(Number);
+        const [eh, em] = b.end_time.split(':').map(Number);
+        const startMins = sh * 60 + sm;
+        const endMins = eh * 60 + em;
+        return startMins <= selectedTimeMins && endMins > selectedTimeMins;
+    });
+
+    if (overlappingBooking) {
+        if (overlappingBooking.state === 'Active') {
+             return { color: 'text-red-500', text: 'Occupied' };
+        }
+        // Check if Late
+        if (isToday && overlappingBooking.state === 'Reserved') {
+             const startDateObj = new Date(`${overlappingBooking.booking_day}T${overlappingBooking.start_time}`);
+             const lateThreshold = new Date(startDateObj.getTime() + 10 * 60000);
+             if (currentTime > lateThreshold) {
+                 const diff = Math.floor((currentTime.getTime() - startDateObj.getTime()) / 60000);
+                 return { color: 'text-orange-500', text: `${diff} min late` };
+             }
+             return { color: 'text-yellow-600', text: 'Reserved' };
+        }
+        if (overlappingBooking.state === 'Reserved') {
+             return { color: 'text-yellow-600', text: 'Reserved' };
+        }
+    }
+
+    return null;
+  };
+
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl border-none p-0 overflow-hidden">
@@ -740,14 +818,26 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
                 <SelectTrigger id="room" className={cn(errors.roomId && "border-destructive")}>
                   <SelectValue placeholder="Select room" />
                 </SelectTrigger>
-                <SelectContent>
-                  {rooms.map((r) => (
-                    <SelectItem key={r.id} value={String(r.id)}>
-                      <div className="flex items-center justify-between">
-                        <div>{r.name}</div>
-                      </div>
-                    </SelectItem>
-                  ))}
+                <SelectContent className="min-w-[300px]">
+                  {rooms
+                    .map((r) => ({ r, status: getRoomStatus(String(r.id)) }))
+                    .filter(({ r, status }) => {
+                        // Always show the currently selected room
+                        if (String(r.id) === String(roomId)) return true;
+
+                        // Hide Occupied (Active) and Reserved (unless Late)
+                        if (status?.text === 'Occupied') return false;
+                        if (status?.text === 'Reserved') return false;
+                        return true;
+                    })
+                    .map(({ r, status }) => (
+                      <SelectItem key={r.id} value={String(r.id)}>
+                        <div className="flex items-center justify-between w-full gap-4">
+                          <span className={status?.color}>{r.name}</span>
+                          {status?.text && <span className={`text-xs ${status.color} whitespace-nowrap`}>{status.text}</span>}
+                        </div>
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>

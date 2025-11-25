@@ -2,9 +2,9 @@ import React, { useMemo, useEffect, useState, useRef } from "react";
 import { format } from "date-fns";
 import { Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
-import timeLib from "@/lib/time";
 import { addMinutes } from "date-fns";
 import BookingCell from "./BookingCell";
+import { useNow } from "@/context/NowContext";
 
 interface Room {
   id: string;
@@ -59,21 +59,11 @@ export const BookingGrid: React.FC<BookingGridProps> = ({
   const channelRefRef = useRef<any>(null);
   const bookingsRef = useRef<Booking[]>([]);
   const [hoveredCell, setHoveredCell] = useState<{ roomId: string | null; timeSlotIso: string | null }>({ roomId: null, timeSlotIso: null });
-  const [currentTime, setCurrentTime] = useState<Date | null>(null);
+  const { currentTime } = useNow();
 
   useEffect(() => {
     bookingsRef.current = bookings;
   }, [bookings]);
-
-  useEffect(() => {
-    const updateTime = async () => {
-      const t = await timeLib.getTime();
-      setCurrentTime(t);
-    };
-    updateTime();
-    const interval = setInterval(updateTime, 60000);
-    return () => clearInterval(interval);
-  }, []);
 
   useEffect(() => {
     // Load rooms and opening hours from the DB. If props are provided, prefer them
