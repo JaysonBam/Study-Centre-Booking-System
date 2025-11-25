@@ -11,6 +11,7 @@ import Analytics from "./pages/Analytics";
 import Authorization from "./pages/Authorization";
 import Login from "./pages/Login";
 import ResetPassword from "./pages/ResetPassword";
+import RoomMaintenance from "./pages/RoomMaintenance";
 import NotFound from "./pages/NotFound";
 import { supabase } from "./lib/supabaseClient";
 import { ConfirmDialogProvider } from "./context/ConfirmDialogContext";
@@ -81,8 +82,9 @@ const App = () => (
           <Sonner />
           <BrowserRouter>
               <Routes>
-              <Route path="/" element={<RootRedirect />} />
               <Route path="/bookings" element={<ProtectedWithFlag><Bookings /></ProtectedWithFlag>} />
+              <Route path="/room-maintenance" element={<ProtectedWithFlag><RoomMaintenance /></ProtectedWithFlag>} />
+              <Route path="/settings" element={<ProtectedWithFlag requiredFlag="settings"><Settings /></ProtectedWithFlag>} />
               <Route path="/settings" element={<ProtectedWithFlag requiredFlag="settings"><Settings /></ProtectedWithFlag>} />
               <Route path="/analytics" element={<ProtectedWithFlag requiredFlag="analytics"><Analytics /></ProtectedWithFlag>} />
               <Route path="/authorization" element={<ProtectedWithFlag requiredFlag="authorisation"><Authorization /></ProtectedWithFlag>} />
