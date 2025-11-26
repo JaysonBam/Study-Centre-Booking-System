@@ -7,6 +7,7 @@ import BookingGrid from "@/components/bookings/BookingGrid";
 import BookingPanel from "@/components/bookings/BookingPanel";
 import { useToast } from "@/hooks/use-toast";
 import { useConfirm } from "@/context/ConfirmDialogContext";
+import { format, parseISO } from "date-fns";
 
 const Bookings = () => {
     useUserFlags();
@@ -74,7 +75,7 @@ const Bookings = () => {
             if (action === 'end') {
                 const { data: booking, error: fetchError } = await supabase
                     .from('bookings')
-                    .select('borrowed_items')
+                    .select('start_time, end_time, booking_day, borrowed_items')
                     .eq('id', bookingId)
                     .single();
 
@@ -96,6 +97,37 @@ const Bookings = () => {
                         cancelText: "No",
                     });
                     if (!returned) return;
+                }
+
+                // Truncate logic
+                const now = await timeLib.getTime();
+                const m = now.getMinutes();
+                const roundedM = Math.round(m / 30) * 30;
+                now.setMinutes(roundedM);
+                now.setSeconds(0);
+                now.setMilliseconds(0);
+
+                const bookingEnd = parseISO(`${booking.booking_day}T${booking.end_time}`);
+                const bookingStart = parseISO(`${booking.booking_day}T${booking.start_time}`);
+
+                if (now < bookingEnd) {
+                    if (now <= bookingStart) {
+                         // Delete
+                         const { error } = await supabase.from('bookings').delete().eq('id', bookingId);
+                         if (error) throw error;
+                         toast({ title: "Deleted", description: "Booking deleted (ended before start time)" });
+                         return;
+                    } else {
+                        // Truncate
+                        const newEndTime = format(now, "HH:mm:ss");
+                        const { error } = await supabase
+                            .from('bookings')
+                            .update({ state: newState, end_time: newEndTime })
+                            .eq('id', bookingId);
+                        if (error) throw error;
+                        toast({ title: "Success", description: `Booking ended early at ${format(now, "HH:mm")}` });
+                        return;
+                    }
                 }
             }
 
