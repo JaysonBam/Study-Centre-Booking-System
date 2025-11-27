@@ -18,7 +18,7 @@ const Login = () => {
     // Check if the users insession, direct to login if not
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) {
-        navigate("/");
+        navigate("/bookings");
       }
     });
   }, [navigate]);
@@ -39,7 +39,7 @@ const Login = () => {
       const uid = signedInUser?.id ?? null;
       if (!uid) {
         // unexpected - navigate home and hope for the best
-        navigate("/");
+        navigate("/bookings");
         return;
       }
 
@@ -50,7 +50,7 @@ const Login = () => {
         if (rowError) {
           console.error('Failed to check users row after sign-in', rowError);
           // if we cannot check, conservatively allow the user (avoid locking out due to RLS)
-          navigate('/');
+          navigate('/bookings');
           return;
         }
 
@@ -63,11 +63,11 @@ const Login = () => {
         }
 
         // All good
-        navigate('/');
+        navigate('/bookings');
         return;
       } catch (err) {
         console.error('Error while validating users row after sign-in', err);
-        navigate('/');
+        navigate('/bookings');
         return;
       }
     } catch (error: any) {

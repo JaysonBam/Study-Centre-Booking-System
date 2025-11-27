@@ -82,6 +82,7 @@ const App = () => (
           <Sonner />
           <BrowserRouter>
               <Routes>
+              <Route path="/" element={<RootRedirect />} />
               <Route path="/bookings" element={<ProtectedWithFlag><Bookings /></ProtectedWithFlag>} />
               <Route path="/room-maintenance" element={<ProtectedWithFlag><RoomMaintenance /></ProtectedWithFlag>} />
               <Route path="/settings" element={<ProtectedWithFlag requiredFlag="settings"><Settings /></ProtectedWithFlag>} />

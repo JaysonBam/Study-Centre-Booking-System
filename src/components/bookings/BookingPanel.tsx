@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { supabase } from "@/lib/supabaseClient";
-import { format, parseISO, addMinutes, eachDayOfInterval, isBefore } from "date-fns";
+import { format, parseISO, addMinutes, eachDayOfInterval, isBefore, differenceInMinutes } from "date-fns";
 import timeLib from "@/lib/time";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
@@ -61,6 +61,11 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
   const [bulkTimes, setBulkTimes] = useState<{ start: string; end: string }[]>([{ start: "", end: "" }]);
   const [bulkRoomIds, setBulkRoomIds] = useState<string[]>([]);
 
+  // Smart Select State
+  const [isSmartSelecting, setIsSmartSelecting] = useState(false);
+  const [rankedRooms, setRankedRooms] = useState<any[]>([]);
+  const [currentRankIndex, setCurrentRankIndex] = useState(0);
+
   // Load rooms and courses when panel opens
   useEffect(() => {
     if (!open) return;
@@ -91,6 +96,11 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
         setBulkTimes([{ start: "", end: "" }]);
         setBulkRoomIds([]);
 
+        // Reset Smart Select state
+        setIsSmartSelecting(false);
+        setRankedRooms([]);
+        setCurrentRankIndex(0);
+
         // If no prefill time provided, populate defaults from testing clock / now
         if (!prefill?.timeSlot && !prefill?.booking) {
           try {
@@ -103,7 +113,7 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
         }
 
         const [{ data: roomsData }, { data: coursesData }] = await Promise.all([
-          supabase.from("rooms").select("id,name,borrowable_items,is_available,dynamic_labels").order("name"),
+          supabase.from("rooms").select("id,name,borrowable_items,is_available,dynamic_labels,capacity,is_open").order("name"),
           supabase.from("courses").select("id,name").order("name"),
         ]);
         const rlist = (roomsData || []).filter((r: any) => r.is_available !== false).map((r: any) => ({ ...r, id: String(r.id) }));
@@ -441,7 +451,36 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
     setLoading(true);
     try {
       const start = parseISO(`${startDate}T${startClock}`);
-      const end = addMinutes(start, parseInt(duration, 10));
+      let end = addMinutes(start, parseInt(duration, 10));
+
+      if (state === 'Ended') {
+          const now = await timeLib.getTime();
+          const m = now.getMinutes();
+          const roundedM = Math.round(m / 30) * 30;
+          now.setMinutes(roundedM);
+          now.setSeconds(0);
+          now.setMilliseconds(0);
+          
+          if (now < end) {
+              if (now <= start) {
+                   // Delete if existing, or cancel if new
+                   if (prefill?.booking) {
+                       const { error } = await supabase.from('bookings').delete().eq('id', prefill.booking.id);
+                       if (error) throw error;
+                       toast({ title: 'Deleted', description: 'Booking deleted (ended before start time).' });
+                   } else {
+                       toast({ title: 'Not Saved', description: 'Booking would end before start time.' });
+                   }
+                   resetFormToDefaults();
+                   onClose();
+                   setLoading(false);
+                   return;
+              } else {
+                  end = now;
+              }
+          }
+      }
+
       const booking_day = startDate;
       const start_time = format(start, "HH:mm:ss");
       const end_time = format(end, "HH:mm:ss");
@@ -637,6 +676,9 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
     setBulkDates([{ start: "", end: "" }]);
     setBulkTimes([{ start: "", end: "" }]);
     setBulkRoomIds([]);
+    setIsSmartSelecting(false);
+    setRankedRooms([]);
+    setCurrentRankIndex(0);
     setErrors({});
   };
 
@@ -680,23 +722,7 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
     const [h, m] = startClock.split(':').map(Number);
     const selectedTimeMins = h * 60 + m;
 
-    // 1. Check for Overdue (Any active booking ended before now) - Only if today
-    if (isToday) {
-        const overdueBooking = dayBookings.find(b => {
-            if (String(b.room_id) !== String(rId)) return false;
-            if (b.state !== 'Active') return false;
-            const endDate = new Date(`${b.booking_day}T${b.end_time}`);
-            return currentTime > endDate;
-        });
-
-        if (overdueBooking) {
-             const endDate = new Date(`${overdueBooking.booking_day}T${overdueBooking.end_time}`);
-             const diff = Math.floor((currentTime.getTime() - endDate.getTime()) / 60000);
-             return { color: 'text-red-500', text: `Overdue ${diff} min` };
-        }
-    }
-
-    // 2. Check for Overlapping booking
+    // 1. Check for Overlapping booking
     const overlappingBooking = dayBookings.find(b => {
         if (String(b.room_id) !== String(rId)) return false;
         // If editing, skip the current booking
@@ -728,8 +754,313 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
         }
     }
 
+    // 2. Check for Overdue (Any active booking ended before now) - Only if today
+    if (isToday) {
+        const overdueBooking = dayBookings.find(b => {
+            if (String(b.room_id) !== String(rId)) return false;
+            if (b.state !== 'Active') return false;
+            const endDate = new Date(`${b.booking_day}T${b.end_time}`);
+            return currentTime > endDate;
+        });
+
+        if (overdueBooking) {
+             const endDate = new Date(`${overdueBooking.booking_day}T${overdueBooking.end_time}`);
+             const diff = Math.floor((currentTime.getTime() - endDate.getTime()) / 60000);
+             return { color: 'text-red-500', text: `Overdue ${diff} min` };
+        }
+    }
+
     return null;
   };
+
+  const handleRoomChange = async (newRoomId: string) => {
+    setRoomId(newRoomId);
+    
+    // Check for late booking
+    const status = getRoomStatus(newRoomId);
+    if (status && status.text.includes("late")) {
+        const [h, m] = startClock.split(':').map(Number);
+        const selectedTimeMins = h * 60 + m;
+        
+        const overlappingBooking = dayBookings.find(b => {
+            if (String(b.room_id) !== String(newRoomId)) return false;
+            if (prefill?.booking && String(b.id) === String(prefill.booking.id)) return false;
+
+            const [sh, sm] = b.start_time.split(':').map(Number);
+            const [eh, em] = b.end_time.split(':').map(Number);
+            const startMins = sh * 60 + sm;
+            const endMins = eh * 60 + em;
+            return startMins <= selectedTimeMins && endMins > selectedTimeMins;
+        });
+        
+        if (overlappingBooking) {
+             const match = status.text.match(/(\d+) min late/);
+             const minsLate = match ? match[1] : "some";
+             
+             const roomName = rooms.find(r => String(r.id) === String(newRoomId))?.name || "Room";
+             const bookingStart = overlappingBooking.start_time.slice(0, 5);
+
+             const shouldDelete = await confirm({
+                title: "Late Booking",
+                description: `Would you like to delete ${roomName} for ${bookingStart} that's ${minsLate} min late?`,
+                confirmText: "Delete",
+                cancelText: "Cancel",
+                variant: "destructive",
+             });
+
+             if (shouldDelete) {
+                 setLoading(true);
+                 try {
+                     const { error } = await supabase.from('bookings').delete().eq('id', overlappingBooking.id);
+                     if (error) throw error;
+                     toast({ title: 'Deleted', description: 'Late booking has been deleted.' });
+                     
+                     // Refresh bookings
+                     const { data } = await supabase
+                        .from('bookings')
+                        .select('id, room_id, start_time, end_time, state, booking_day')
+                        .eq('booking_day', startDate);
+                     if (data) setDayBookings(data);
+                     
+                 } catch (err: any) {
+                     console.error('Delete failed', err);
+                     toast({ title: 'Delete failed', description: err?.message || 'Unable to delete booking' });
+                 } finally {
+                     setLoading(false);
+                 }
+             }
+        }
+    }
+  };
+
+  const getOptimalRooms = (groupSize: number, allRooms: any[], bookings: any[], now: Date) => {
+      // 1. Filter by Capacity
+      const validRooms = allRooms.filter(r => (r.capacity || 0) >= groupSize);
+      
+      const nowMins = now.getHours() * 60 + now.getMinutes();
+      const endOfDayMins = 24 * 60;
+
+      const roomMetrics = validRooms.map(room => {
+          // Calculate Metrics
+          const rId = String(room.id);
+          const roomBookings = bookings.filter((b: any) => String(b.room_id) === rId);
+          
+          // Find current and relevant bookings
+          let currentBooking: any = null;
+          let lastActiveBooking: any = null; // For overdue check
+          let nextBookingStart = endOfDayMins;
+
+          roomBookings.forEach((b: any) => {
+              const start = parseISO(`${b.booking_day}T${b.start_time}`);
+              const end = parseISO(`${b.booking_day}T${b.end_time}`);
+              const startMins = start.getHours() * 60 + start.getMinutes();
+              
+              // Check if current
+              if (now >= start && now < end) {
+                  if (b.state === 'Active' || b.state === 'Reserved') {
+                      currentBooking = b;
+                  }
+              }
+              
+              // Check for overdue (Active and ended in the past)
+              if (b.state === 'Active' && now > end) {
+                  // We want the most recent overdue one if multiple?
+                  if (!lastActiveBooking || parseISO(`${lastActiveBooking.booking_day}T${lastActiveBooking.end_time}`) < parseISO(`${b.booking_day}T${b.end_time}`)) {
+                      lastActiveBooking = b;
+                  }
+              }
+
+              // Find next booking start
+              if (start > now) {
+                  if (startMins < nextBookingStart) {
+                      nextBookingStart = startMins;
+                  }
+              }
+          });
+
+          let category = 3; // Default Worst
+          let subCategoryTier2 = 0; // 1 for Reserved Late, 2 for Overdue
+          let lateArrivalMinutes = 0;
+          let overdueMinutes = 0;
+          let minutesAvailable = 0;
+
+          // Calculate Late Arrival
+          if (currentBooking && currentBooking.state === 'Reserved') {
+              const start = parseISO(`${currentBooking.booking_day}T${currentBooking.start_time}`);
+              lateArrivalMinutes = differenceInMinutes(now, start);
+          }
+
+          // Calculate Overdue
+          if (lastActiveBooking) {
+              const end = parseISO(`${lastActiveBooking.booking_day}T${lastActiveBooking.end_time}`);
+              overdueMinutes = differenceInMinutes(now, end);
+          }
+
+          // Determine Category
+          if (currentBooking) {
+              if (currentBooking.state === 'Active') {
+                  category = 3;
+              } else if (currentBooking.state === 'Reserved') {
+                  if (lateArrivalMinutes >= 30) {
+                      category = 1;
+                  } else if (lateArrivalMinutes > 10) { // 10 < late < 30
+                      category = 2;
+                      subCategoryTier2 = 1; // Reserved Late
+                  } else { // <= 10
+                      category = 3;
+                  }
+              }
+          } else {
+              // No current booking
+              if (lastActiveBooking) {
+                  category = 2;
+                  subCategoryTier2 = 2; // Overdue
+              } else {
+                  category = 1;
+              }
+          }
+
+          // Calculate Minutes Available
+          minutesAvailable = nextBookingStart - nowMins;
+          if (minutesAvailable < 0) minutesAvailable = 0;
+
+          // Maintenance
+          const hasIssues = room.dynamic_labels && room.dynamic_labels.length > 0;
+          const isOpen = room.is_open === true;
+
+          return {
+              room,
+              category,
+              subCategoryTier2,
+              hasIssues,
+              overdueMinutes,
+              lateArrivalMinutes,
+              minutesAvailable,
+              name: room.name,
+              isOpen
+          };
+      });
+
+      // Sort
+      roomMetrics.sort((a, b) => {
+          // 1. Category ASC (1 best)
+          if (a.category !== b.category) return a.category - b.category;
+
+          // Tier 1 Sorting
+          if (a.category === 1) {
+              // 1. Preference
+              // If GroupSize >= 4: Closed (!isOpen) first.
+              // If GroupSize < 4: Open (isOpen) first.
+              const preferClosed = groupSize >= 4;
+              const aIsPreferred = preferClosed ? !a.isOpen : a.isOpen;
+              const bIsPreferred = preferClosed ? !b.isOpen : b.isOpen;
+              
+              if (aIsPreferred !== bIsPreferred) return (bIsPreferred ? 1 : 0) - (aIsPreferred ? 1 : 0);
+
+              // 2. Time Available (Descending)
+              if (a.minutesAvailable !== b.minutesAvailable) return b.minutesAvailable - a.minutesAvailable;
+
+              // 3. Maintenance (No issues first)
+              if (a.hasIssues !== b.hasIssues) return (a.hasIssues ? 1 : 0) - (b.hasIssues ? 1 : 0);
+
+              // 4. Alpha
+              return a.name.localeCompare(b.name);
+          }
+
+          // Tier 2 Sorting
+          if (a.category === 2) {
+              // Sub-category: Reserved Late (1) vs Overdue (2). Reserved Late first.
+              if (a.subCategoryTier2 !== b.subCategoryTier2) return a.subCategoryTier2 - b.subCategoryTier2;
+
+              if (a.subCategoryTier2 === 1) {
+                  // Reserved Late: Most late first
+                  if (a.lateArrivalMinutes !== b.lateArrivalMinutes) return b.lateArrivalMinutes - a.lateArrivalMinutes;
+              } else {
+                  // Overdue: Most overdue first
+                  if (a.overdueMinutes !== b.overdueMinutes) return b.overdueMinutes - a.overdueMinutes;
+              }
+              
+              // Alpha tie-breaker
+              return a.name.localeCompare(b.name);
+          }
+
+          // Tier 3 Sorting
+          if (a.category === 3) {
+              return a.name.localeCompare(b.name);
+          }
+          
+          return 0;
+      });
+
+      return roomMetrics.filter(m => m.category !== 3).map(m => m.room);
+  };
+
+  const handleSmartSelect = async () => {
+    const sizeStr = window.prompt("Enter Group Size:");
+    if (!sizeStr) return;
+    const size = parseInt(sizeStr, 10);
+    if (isNaN(size)) {
+        toast({ title: "Invalid size", description: "Please enter a number" });
+        return;
+    }
+
+    // Use currently selected date/time
+    let targetDate = new Date();
+    try {
+        targetDate = parseISO(`${startDate}T${startClock}`);
+    } catch (e) {
+        console.error("Invalid date/time", e);
+    }
+
+    // Fetch bookings for the selected date
+    const { data: bookings } = await supabase
+        .from('bookings')
+        .select('id, room_id, start_time, end_time, state, booking_day')
+        .eq('booking_day', startDate);
+        
+    if (!bookings) {
+        return;
+    }
+    setDayBookings(bookings);
+
+    // Run Algorithm
+    const ranked = getOptimalRooms(size, rooms, bookings, targetDate);
+    console.log("Smart Select Ranked Rooms:", ranked);
+    
+    if (ranked.length === 0) {
+        toast({ title: "No rooms found", description: "No rooms match the criteria." });
+        return;
+    }
+
+    setRankedRooms(ranked);
+    setCurrentRankIndex(0);
+    setRoomId(String(ranked[0].id));
+    setIsSmartSelecting(true);
+  };
+
+  const selectNextRankedRoom = () => {
+      if (rankedRooms.length === 0) return;
+      const nextIndex = (currentRankIndex + 1) % rankedRooms.length;
+      setCurrentRankIndex(nextIndex);
+      setRoomId(String(rankedRooms[nextIndex].id));
+  };
+
+  const shouldHighlightReserve = React.useMemo(() => {
+    if (!startDate || !startClock) return false;
+    try {
+        const selectedTime = parseISO(`${startDate}T${startClock}`);
+        const roundedCurrent = new Date(currentTime);
+        const m = roundedCurrent.getMinutes();
+        const roundedM = Math.round(m / 30) * 30;
+        roundedCurrent.setMinutes(roundedM);
+        roundedCurrent.setSeconds(0);
+        roundedCurrent.setMilliseconds(0);
+        
+        return roundedCurrent < selectedTime;
+    } catch (e) {
+        return false;
+    }
+  }, [currentTime, startDate, startClock]);
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -814,37 +1145,48 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
             ) : (
             <>
             <div className="space-y-2">
-              <Select value={roomId} onValueChange={setRoomId}>
-                <SelectTrigger id="room" className={cn(errors.roomId && "border-destructive")}>
-                  <SelectValue placeholder="Select room" />
-                </SelectTrigger>
-                <SelectContent className="min-w-[300px]">
-                  {rooms
-                    .map((r) => ({ r, status: getRoomStatus(String(r.id)) }))
-                    .filter(({ r, status }) => {
-                        // Always show the currently selected room
-                        if (String(r.id) === String(roomId)) return true;
+              <div className="flex items-center gap-2">
+                <div className="flex-1">
+                  <Select value={roomId} onValueChange={handleRoomChange}>
+                    <SelectTrigger id="room" className={cn(errors.roomId && "border-destructive")}>
+                      <SelectValue placeholder="Select room" />
+                    </SelectTrigger>
+                    <SelectContent className="min-w-[300px]">
+                      {rooms
+                        .map((r) => ({ r, status: getRoomStatus(String(r.id)) }))
+                        .filter(({ r, status }) => {
+                            // Always show the currently selected room
+                            if (String(r.id) === String(roomId)) return true;
 
-                        // Hide Occupied (Active) and Reserved (unless Late)
-                        if (status?.text === 'Occupied') return false;
-                        if (status?.text === 'Reserved') return false;
-                        return true;
-                    })
-                    .map(({ r, status }) => (
-                      <SelectItem key={r.id} value={String(r.id)} className="[&>span:last-of-type]:flex [&>span:last-of-type]:w-full">
-                        <div className="flex items-center justify-between w-full gap-4">
-                          <div className="flex items-center gap-2">
-                            <span className={status?.color}>{r.name}</span>
-                            {status?.text && <span className={`text-xs ${status.color} whitespace-nowrap`}>{status.text}</span>}
-                          </div>
-                          {r.dynamic_labels && r.dynamic_labels.length > 0 && (
-                            <span className="text-xs">{r.dynamic_labels.map((l: string) => l.split(' ').pop()).join(' ')}</span>
-                          )}
-                        </div>
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
+                            // Hide Occupied (Active) and Reserved (unless Late)
+                            if (status?.text === 'Occupied') return false;
+                            if (status?.text === 'Reserved') return false;
+                            return true;
+                        })
+                        .map(({ r, status }) => (
+                          <SelectItem key={r.id} value={String(r.id)} className="[&>span:last-of-type]:flex [&>span:last-of-type]:w-full">
+                            <div className="flex items-center justify-between w-full gap-4">
+                              <div className="flex items-center gap-2">
+                                <span className={status?.color}>{r.name}</span>
+                                {status?.text && <span className={`text-xs ${status.color} whitespace-nowrap`}>{status.text}</span>}
+                              </div>
+                              {r.dynamic_labels && r.dynamic_labels.length > 0 && (
+                                <span className="text-xs">{r.dynamic_labels.map((l: string) => l.split(' ').pop()).join(' ')}</span>
+                              )}
+                            </div>
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {!prefill?.booking && (
+                    isSmartSelecting ? (
+                        <Button variant="outline" onClick={selectNextRankedRoom}>Next ({currentRankIndex + 1}/{rankedRooms.length})</Button>
+                    ) : (
+                        <Button variant="outline" onClick={handleSmartSelect}>Smart Select</Button>
+                    )
+                )}
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
@@ -955,8 +1297,21 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({ open, onClose, prefi
               </>
             ) : (
               <>
-                <Button onClick={() => handleSave("Reserved")} disabled={loading} variant="secondary">Reserve</Button>
-                <Button onClick={() => handleSave("Active")} disabled={loading}>{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Book-in (Active)"}</Button>
+                <Button 
+                  onClick={() => handleSave("Reserved")} 
+                  disabled={loading} 
+                  variant={shouldHighlightReserve ? "default" : "secondary"}
+                  className={shouldHighlightReserve ? "bg-blue-600 hover:bg-blue-700 text-white" : ""}
+                >
+                  Reserve
+                </Button>
+                <Button 
+                  onClick={() => handleSave("Active")} 
+                  disabled={loading}
+                  variant={shouldHighlightReserve ? "secondary" : "default"}
+                >
+                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Book-in (Active)"}
+                </Button>
               </>
             )}
           </div>
